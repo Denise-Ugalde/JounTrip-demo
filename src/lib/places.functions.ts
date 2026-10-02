@@ -303,7 +303,8 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
       // Strict: only destinations between 2 and 3 hours by road.
       const list = all.filter((d) => d.minutes >= 120 && d.minutes <= 180);
       list.sort(() => Math.random() - 0.5);
-      nearCache.set(ck, list);
+      console.log("nearby", data.origin, "towns", cands.length, "routes", all.length, "in range", list.length);
+      if (list.length) nearCache.set(ck, list);
       return { origin: o, list };
     } catch (e) {
       console.error(e);
