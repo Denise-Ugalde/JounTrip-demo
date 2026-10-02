@@ -244,3 +244,13 @@ export function generateTrip(p: Prefs, exclude: string[] = []): Trip {
   const pick = (sameHub.length ? sameHub : ranked.length ? ranked : D)[0]!;
   return build(pick, p);
 }
+
+/** Build a trip around a real destination found near the origin. */
+export function tripForReal(p: Prefs, r: { name: string; region: string; lat: number; lng: number; minutes: number }): Trip {
+  const base = D[Math.abs([...r.name].reduce((a, c) => a + c.charCodeAt(0), 0)) % D.length]!;
+  const hours = Math.round((r.minutes / 60) * 10) / 10;
+  return build({
+    ...base, name: r.name, region: r.region || "Cerca de ti", lat: r.lat, lng: r.lng, hours,
+    intro: `A unas ${hours} h por carretera (auto o bus) desde ${p.origin.split(",")[0]}. Un itinerario armado con lugares reales según tu vibe.`,
+  }, p);
+}
