@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { TripMap } from "@/components/TripMap";
-import { RealPlaces } from "@/components/RealPlaces";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { getTripPlaces, type RealPlace } from "@/lib/places.functions";
+import { Star } from "lucide-react";
 import {
   ArrowLeft, Car, Clock, Wallet, Sparkles, MapPin, Download, Share2, RefreshCw, X,
   MessageCircle, Send, Mail, Link2, Check, Utensils,
@@ -177,7 +180,33 @@ function Loading() {
 }
 
 function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; onBack: () => void; onRetry: () => void }) {
-  const { dest, days } = trip;
+  const { dest } = trip;
+  const fetchPlaces = useServerFn(getTripPlaces);
+  const { data: live, isLoading: liveLoading } = useQuery({
+    queryKey: ["trip-places", dest.name, prefs.vibe],
+    queryFn: () => fetchPlaces({ data: { destination: `${dest.name}, ${dest.region}`, vibe: prefs.vibe, lat: dest.lat, lng: dest.lng } }),
+    staleTime: Infinity, retry: false,
+  });
+  const realSpots = live?.spots ?? [];
+  const realFood = live?.food ?? [];
+  const hasLive = realSpots.length + realFood.length > 0;
+  // Swap itinerary stops for real Google places (restaurants at meal times).
+  let si = 0, fi = 0;
+  const days = trip.days.map((d) => ({
+    ...d,
+    items: d.items.map((it) => {
+      const meal = it.time === "12:30" || it.time === "19:00";
+      const rp: RealPlace | undefined = meal ? (realFood[fi++] ?? realSpots[si++]) : (realSpots[si++] ?? realFood[fi++]);
+      if (!rp) return { ...it, place: undefined as RealPlace | undefined };
+      return { ...it, title: rp.name, type: meal ? "Restaurante" : it.type, summary: rp.address, place: rp };
+    }),
+  }));
+  const pins = hasLive
+    ? [...realSpots, ...realFood].filter((p) => p.lat != null && p.lng != null).map((p) => ({ name: p.name, type: realFood.includes(p) ? "Restaurante" : "Lugar", lat: p.lat!, lng: p.lng! }))
+    : dest.spots;
+  const listItems = hasLive
+    ? [...realSpots.map((p) => ({ n: p.name, t: p.address, food: false, url: p.mapsUrl, r: p.rating })), ...realFood.map((p) => ({ n: p.name, t: p.address, food: true, url: p.mapsUrl, r: p.rating }))]
+    : [...dest.spots.map((s) => ({ n: s.name, t: s.type, food: false, url: "", r: null as number | null })), ...dest.dishes.map((d) => ({ n: d.place, t: d.name, food: true, url: "", r: null as number | null }))];
   const [day, setDay] = useState(0);
   const [share, setShare] = useState(false);
   useEffect(() => setDay(0), [dest.name]);
@@ -222,21 +251,20 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
           <button onClick={onRetry} className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-primary px-4 py-3 font-semibold text-primary-foreground shadow-warm"><RefreshCw className="h-4 w-4" />Probar otro destino 🔄</button>
         </div>
 
-        <div className="no-print"><RealPlaces destination={`${dest.name}, ${dest.region}`} vibe={prefs.vibe} lat={dest.lat} lng={dest.lng} /></div>
-
         <section>
-          <h2 className="mb-4 font-display text-3xl font-extrabold">Tu mapa</h2>
+          <h2 className="mb-1 font-display text-3xl font-extrabold">Tu mapa</h2>
+          <p className="mb-4 text-sm text-muted-foreground">{liveLoading ? "Buscando lugares reales en Google…" : hasLive ? "Lugares reales de Google Maps, con calificaciones en vivo." : "No pudimos cargar lugares reales; mostramos sugerencias."}</p>
           <div className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
-            <TripMap center={{ lat: dest.lat, lng: dest.lng }} pins={dest.spots} fallback={osmSrc} />
-            <ul className="space-y-2">
-              {[...dest.spots.map((s) => ({ n: s.name, t: s.type, food: false })), ...dest.dishes.map((d) => ({ n: d.place, t: d.name, food: true }))].map((p, i) => (
+            <TripMap center={{ lat: dest.lat, lng: dest.lng }} pins={pins} fallback={osmSrc} />
+            <ul className="max-h-[480px] space-y-2 overflow-y-auto">
+              {listItems.map((p, i) => (
                 <li key={i}>
-                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.n}, ${dest.name}`)}`} target="_blank" rel="noreferrer"
+                  <a href={p.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.n}, ${dest.name}`)}`} target="_blank" rel="noreferrer"
                     className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card hover:bg-muted">
                     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${p.food ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground"}`}>
                       {p.food ? <Utensils className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
                     </span>
-                    <span className="min-w-0"><span className="block truncate font-semibold">{p.n}</span><span className="text-sm text-muted-foreground">{p.t}</span></span>
+                    <span className="min-w-0"><span className="block truncate font-semibold">{p.n}</span><span className="block truncate text-sm text-muted-foreground">{p.r != null && <span className="mr-1 font-semibold text-primary">★ {p.r.toFixed(1)}</span>}{p.t}</span></span>
                   </a>
                 </li>
               ))}
@@ -279,7 +307,12 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
                         {it.cost === 0 ? "¡Gratis!" : `~$${it.cost}`}
                       </span>
                     </div>
-                    <h3 className="font-display font-bold">{it.title}</h3>
+                    {it.place ? (
+                      <a href={it.place.mapsUrl} target="_blank" rel="noreferrer" className="font-display font-bold hover:text-primary">{it.title}</a>
+                    ) : <h3 className="font-display font-bold">{it.title}</h3>}
+                    {it.place?.rating != null && (
+                      <span className="ml-0 flex items-center gap-1 text-sm font-medium text-primary"><Star className="h-3.5 w-3.5 fill-current" />{it.place.rating.toFixed(1)}{it.place.reviews != null && <span className="text-muted-foreground">({it.place.reviews.toLocaleString("es")})</span>}</span>
+                    )}
                     <p className="text-sm text-muted-foreground">{it.summary}</p>
                   </div>
                 </li>
