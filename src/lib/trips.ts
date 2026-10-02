@@ -219,7 +219,7 @@ function build(dest: Destination, p: Prefs): Trip {
       const s = pool[(di * 3 + si) % pool.length]!;
       return {
         time, title: s.name, type: s.type, img: s.img,
-        summary: `${s.type} en ${dest.name}, ideal para un plan ${VIBES.find((v) => v.id === p.vibe)!.label.split(" ")[0].toLowerCase()}.`,
+        summary: `${s.type} en ${dest.name}, ideal para un plan ${VIBES.find((v) => v.id === p.vibe)!.label.split(" ")[0]?.toLowerCase()}.`,
         cost: Math.round(s.cost * mult[p.budget]),
       };
     }),
