@@ -241,13 +241,13 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
             items: stops.map((s) => ({
               time: fmt(s.start), until: fmt(s.end), travel: s.travel, place: s.place,
               title: s.place.name,
-              type: s.meal === "comida" ? "Comida" : s.meal === "cena" ? "Cena" : s.place.type ?? "Lugar",
+              type: s.meal === "comida" ? "Comida" : s.meal === "cena" ? "Cena" : s.night ? "Para cerrar la noche" : s.place.type ?? "Actividad",
               summary: s.place.address, cost: -1, img: s.place.photo ?? dest.cover,
             })),
           };
         }).filter((d) => d.items.length > 0);
       })()
-    : trip.days;
+    : dest.dishes.length === 0 ? [] : trip.days;
   const pins = hasLive
     ? [...realSpots, ...realFood].filter((p) => p.lat != null && p.lng != null).map((p) => ({ name: p.name, type: realFood.includes(p) ? "Restaurante" : "Lugar", lat: p.lat!, lng: p.lng! }))
     : dest.spots;
@@ -353,6 +353,8 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
 
         <section>
           <h2 className="mb-4 font-display text-3xl font-extrabold">Día a día</h2>
+          {days.length === 0 && <p className="text-sm text-muted-foreground">{liveLoading ? "Armando tu día a día con lugares reales de Google…" : "No encontramos suficientes lugares abiertos en Google para armar el día a día."}</p>}
+          {hasLive && days.length > 0 && days.length < trip.days.length && <p className="mb-4 text-sm text-muted-foreground">{dest.name} es un destino pequeño: sus lugares abiertos alcanzan para {days.length} {days.length === 1 ? "día" : "días"} bien aprovechados sin repetir.</p>}
           <div className="no-print mb-5 flex gap-2 overflow-x-auto">
             {days.map((d, i) => <button key={i} onClick={() => setDay(i)} className={chip(day === i)}>Día {d.day}</button>)}
           </div>

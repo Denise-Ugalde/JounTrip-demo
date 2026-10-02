@@ -16,6 +16,14 @@ export type RealPlace = {
   hours?: { open: { day: number; hour: number; minute: number }; close?: { day: number; hour: number; minute: number } }[] | null;
 };
 
+const VIBE_ACTIVITY: Record<string, string> = {
+  naturaleza: "parques naturales, senderos y miradores",
+  cultura: "museos y lugares culturales",
+  gastro: "mercados tradicionales y experiencias gastronómicas",
+  playa: "playas y actividades de aventura",
+  fiesta: "lugares de entretenimiento y espectáculos",
+};
+
 const VIBE_QUERY: Record<string, string> = {
   naturaleza: "parques y naturaleza",
   cultura: "museos y lugares culturales",
@@ -125,7 +133,7 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
 export const getTripPlaces = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z.object({
-      destination: z.string().trim().min(2).max(80),
+      destination: z.string().trim().min(2).max(200),
       vibe: z.enum(["naturaleza", "cultura", "gastro", "playa", "fiesta"]),
       lat: z.number().min(-90).max(90),
       lng: z.number().min(-180).max(180),
@@ -133,20 +141,25 @@ export const getTripPlaces = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const city = data.destination;
-    const [cover, vibeSpots, top, food, more, nightRaw] = await Promise.all([
+    const [cover, vibeSpots, top, food, more, acts, nightRaw] = await Promise.all([
       textSearch(city, data.lat, data.lng, 1),
-      textSearch(`${VIBE_QUERY[data.vibe]} en ${city}`, data.lat, data.lng, 20),
+      textSearch(`${VIBE_ACTIVITY[data.vibe]} en ${city}`, data.lat, data.lng, 20),
       textSearch(`atracciones turísticas en ${city}`, data.lat, data.lng, 20),
-      textSearch(`restaurantes de comida típica en ${city}`, data.lat, data.lng, 20),
-      textSearch(`monumentos, plazas y museos en ${city}`, data.lat, data.lng, 20),
-      textSearch(`bares, terrazas y vida nocturna en ${city}`, data.lat, data.lng, 15),
+      textSearch(`mejores restaurantes en ${city}`, data.lat, data.lng, 20),
+      textSearch(`museos, monumentos y sitios históricos en ${city}`, data.lat, data.lng, 20),
+      textSearch(`parques, miradores y actividades al aire libre en ${city}`, data.lat, data.lng, 20),
+      textSearch(`bares y terrazas en ${city}`, data.lat, data.lng, 15),
     ]);
-    const near = (p: RealPlace) => p.lat == null || p.lng == null || (Math.abs(p.lat - data.lat) < 0.35 && Math.abs(p.lng - data.lng) < 0.45);
+    const FOOD = /restaurant|cafe|coffee|bakery|food|meal|ice_cream|diner|steak|pizza|sandwich|deli|brunch|dessert/;
+    const NIGHT = /bar|pub|night_club|wine|brewery|cocktail|lounge/;
+    const near = (p: RealPlace) => p.lat == null || p.lng == null || (Math.abs(p.lat - data.lat) < 0.3 && Math.abs(p.lng - data.lng) < 0.4);
     const byPhoto = (a: RealPlace, b: RealPlace) => Number(!!b.photo) - Number(!!a.photo);
     const seen = new Set<string>();
-    const spots = [...vibeSpots, ...top, ...more].filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
-    const foodU = food.filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
-    const night = nightRaw.filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
+    const all = [...vibeSpots, ...top, ...more, ...acts, ...food, ...nightRaw].filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id));
+    const k = (p: RealPlace) => p.kind ?? "";
+    const spots = all.filter((p) => !FOOD.test(k(p)) && !NIGHT.test(k(p))).sort(byPhoto);
+    const foodU = all.filter((p) => FOOD.test(k(p))).sort(byPhoto);
+    const night = all.filter((p) => NIGHT.test(k(p))).sort(byPhoto);
     return { spots, food: foodU, night, cover: cover[0]?.photo ?? spots.find((p) => p.photo)?.photo ?? null };
   });
 
@@ -225,11 +238,12 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           high: { latitude: Math.min(89, o.lat + dLat), longitude: Math.min(179.9, o.lng + dLng) },
         },
       };
-      const queries = ["pueblos turísticos", "ciudades turísticas", "pueblos con encanto", "tourist towns", "historic towns", "ciudades pequeñas"];
+      // Find popular attractions in the area, then group them by the town they belong to.
+      const queries = ["pueblos turísticos", "ciudades turísticas", "pueblos con encanto", "casco histórico", "castillos y monumentos", "atracciones turísticas", "parques naturales y miradores", "historic towns"];
       const results = await Promise.all(queries.map(async (q) => {
         const r = await fetch(`${GW}/places/v1/places:searchText`, {
-          method: "POST", headers: gwHeaders("places.id,places.displayName,places.formattedAddress,places.location"),
-          body: JSON.stringify({ textQuery: q, includedType: "locality", pageSize: 20, languageCode: "es", locationRestriction: rect }),
+          method: "POST", headers: gwHeaders("places.id,places.location,places.addressComponents,places.userRatingCount"),
+          body: JSON.stringify({ textQuery: q, pageSize: 20, languageCode: "es", locationRestriction: rect }),
         });
         if (!r.ok) { console.error("near search", r.status, await r.text()); return []; }
         return (((await r.json()) as any).places ?? []) as any[];
@@ -240,15 +254,30 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         const h = Math.sin(x / 2) ** 2 + Math.cos(o.lat * toR) * Math.cos(a * toR) * Math.sin(y / 2) ** 2;
         return 2 * R * Math.asin(Math.sqrt(h));
       };
+      type Town = { name: string; region: string; lat: number; lng: number; score: number; top: number };
+      const towns = new Map<string, Town>();
       const seen = new Set<string>();
-      const seenName = new Set<string>();
-      const cands = results.flat().filter((p) => {
-        const nm = String(p.displayName?.text ?? "").toLowerCase();
-        if (!p.location || seen.has(p.id) || seenName.has(nm)) return false;
-        seen.add(p.id); seenName.add(nm);
+      for (const p of results.flat()) {
+        if (!p.location || seen.has(p.id)) continue;
+        seen.add(p.id);
+        const comps = (p.addressComponents ?? []) as { longText: string; types: string[] }[];
+        const town = comps.find((c) => (c.types ?? []).includes("locality"))?.longText;
+        if (!town) continue;
         const d = km(p.location.latitude, p.location.longitude);
-        return d > 80 && d < 300;
-      }).slice(0, 50);
+        if (d < 80 || d > 300) continue;
+        const prov = comps.find((c) => (c.types ?? []).includes("administrative_area_level_2"))?.longText
+          ?? comps.find((c) => (c.types ?? []).includes("administrative_area_level_1"))?.longText;
+        const country = comps.find((c) => (c.types ?? []).includes("country"))?.longText;
+        const reviews = p.userRatingCount ?? 0;
+        const t = towns.get(town);
+        if (!t) towns.set(town, { name: town, region: [prov, country].filter((x) => x && x !== town).join(", "), lat: p.location.latitude, lng: p.location.longitude, score: reviews, top: reviews });
+        else {
+          t.score += reviews;
+          if (reviews > t.top) { t.top = reviews; t.lat = p.location.latitude; t.lng = p.location.longitude; }
+        }
+      }
+      // Real tourist towns: at least a few hundred reviews across their attractions.
+      const cands = [...towns.values()].filter((t) => t.score >= 300).sort((a, b) => b.score - a.score).slice(0, 50);
       if (!cands.length) return { origin: o, list: [] };
 
       const chunks = [cands.slice(0, 25), cands.slice(25, 50)].filter((c) => c.length);
@@ -258,7 +287,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           method: "POST", headers: gwHeaders("destinationIndex,duration,condition"),
           body: JSON.stringify({
             origins: [{ waypoint: { location: { latLng: { latitude: o.lat, longitude: o.lng } } } }],
-            destinations: chunk.map((p) => ({ waypoint: { location: { latLng: { latitude: p.location.latitude, longitude: p.location.longitude } } } })),
+            destinations: chunk.map((p) => ({ waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lng } } } })),
             travelMode: "DRIVE",
           }),
         });
@@ -268,19 +297,14 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           if (r.condition !== "ROUTE_EXISTS" || !r.duration) continue;
           const p = cands[ci * 25 + (r.destinationIndex ?? 0)];
           if (!p) continue;
-          const parts = String(p.formattedAddress ?? "").split(",").map((s: string) => s.trim());
-          all.push({
-            name: p.displayName?.text ?? parts[0] ?? "Destino",
-            region: parts.slice(1).join(", ") || "",
-            lat: p.location.latitude, lng: p.location.longitude,
-            minutes: Math.round(parseInt(r.duration, 10) / 60),
-          });
+          all.push({ name: p.name, region: p.region, lat: p.lat, lng: p.lng, minutes: Math.round(parseInt(r.duration, 10) / 60) });
         }
       }
       // Strict: only destinations between 2 and 3 hours by road.
       const list = all.filter((d) => d.minutes >= 120 && d.minutes <= 180);
       list.sort(() => Math.random() - 0.5);
-      nearCache.set(ck, list);
+      console.log("nearby", data.origin, "towns", cands.length, "routes", all.length, "in range", list.length);
+      if (list.length) nearCache.set(ck, list);
       return { origin: o, list };
     } catch (e) {
       console.error(e);
@@ -307,7 +331,7 @@ const dishCache = new Map<string, LocalDish[]>();
 
 /** Typical/traditional dishes of a destination, with real photos of each dish. */
 export const getLocalDishes = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ destination: z.string().trim().min(2).max(120), lat: z.number(), lng: z.number() }).parse(d))
+  .inputValidator((d) => z.object({ destination: z.string().trim().min(2).max(200), lat: z.number(), lng: z.number() }).parse(d))
   .handler(async ({ data }): Promise<{ dishes: LocalDish[] }> => {
     const ck = data.destination.toLowerCase();
     if (dishCache.has(ck)) return { dishes: dishCache.get(ck)! };
