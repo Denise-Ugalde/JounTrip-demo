@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { TripMap } from "@/components/TripMap";
+import { RealPlaces } from "@/components/RealPlaces";
 import {
   ArrowLeft, Car, Clock, Wallet, Sparkles, MapPin, Download, Share2, RefreshCw, X,
   MessageCircle, Send, Mail, Link2, Check, Utensils,
@@ -220,6 +221,8 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
           <button onClick={() => setShare(true)} className="flex items-center justify-center gap-2 rounded-2xl bg-secondary px-4 py-3 font-semibold text-secondary-foreground shadow-card"><Share2 className="h-4 w-4" />Compartir Itinerario 🚀</button>
           <button onClick={onRetry} className="flex items-center justify-center gap-2 rounded-2xl bg-gradient-primary px-4 py-3 font-semibold text-primary-foreground shadow-warm"><RefreshCw className="h-4 w-4" />Probar otro destino 🔄</button>
         </div>
+
+        <div className="no-print"><RealPlaces destination={`${dest.name}, ${dest.region}`} vibe={prefs.vibe} lat={dest.lat} lng={dest.lng} /></div>
 
         <section>
           <h2 className="mb-4 font-display text-3xl font-extrabold">Tu mapa</h2>
