@@ -211,8 +211,7 @@ function Loading() {
 
 /** Google Maps link that opens exactly this place (by its Google place id). */
 const placeUrl = (p: RealPlace) =>
-  p.mapsUrl?.startsWith("https://") ? p.mapsUrl
-    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name}, ${p.address}`)}&query_place_id=${encodeURIComponent(p.id)}`;
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name}, ${p.address}`)}&query_place_id=${encodeURIComponent(p.id)}`;
 
 function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; onBack: () => void; onRetry: () => void }) {
   const { dest } = trip;
@@ -335,7 +334,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
                 <div className="p-4">
                   <h4 className="font-display text-lg font-bold">{d.name}</h4>
                   <p className="mt-1 text-sm text-muted-foreground">{d.note}</p>
-                  {d.place && <a href={d.place.mapsUrl} target="_blank" rel="noreferrer" className="mt-2 block text-sm font-semibold text-primary hover:underline">Pruébalo en {d.place.name} →</a>}
+                  {d.place && <a href={placeUrl(d.place)} target="_blank" rel="noopener noreferrer" className="mt-2 block text-sm font-semibold text-primary hover:underline">Pruébalo en {d.place.name} →</a>}
                 </div>
               </article>
             )) : <p className="text-sm text-muted-foreground">{dishLoading ? "Buscando platillos típicos…" : "No encontramos platillos típicos para este destino."}</p>}
@@ -343,7 +342,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
           <h3 className="mb-3 mt-8 font-display text-xl font-bold">Restaurantes imperdibles</h3>
           <div className="grid gap-4 sm:grid-cols-3">
             {realFood.length > 0 ? [...realFood].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).slice(0, 6).map((f) => (
-              <a key={f.id} href={f.mapsUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-3xl bg-card shadow-card hover:bg-muted">
+              <a key={f.id} href={placeUrl(f)} target="_blank" rel="noopener noreferrer" className="overflow-hidden rounded-3xl bg-card shadow-card hover:bg-muted">
                 {f.photo ? <img src={f.photo} alt={f.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
                   : <div className="flex h-40 w-full items-center justify-center bg-muted"><Utensils className="h-8 w-8 text-muted-foreground" /></div>}
                 <div className="p-4">
@@ -378,7 +377,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
                       </span> : <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-bold">{it.type}</span>}
                     </div>
                     {it.place ? (
-                      <a href={it.place.mapsUrl} target="_blank" rel="noreferrer" className="font-display font-bold hover:text-primary">{it.title}</a>
+                      <a href={placeUrl(it.place)} target="_blank" rel="noopener noreferrer" className="font-display font-bold hover:text-primary">{it.title}</a>
                     ) : <h3 className="font-display font-bold">{it.title}</h3>}
                     {it.place?.rating != null && (
                       <span className="ml-0 flex items-center gap-1 text-sm font-medium text-primary"><Star className="h-3.5 w-3.5 fill-current" />{it.place.rating.toFixed(1)}{it.place.reviews != null && <span className="text-muted-foreground">({it.place.reviews.toLocaleString("es")})</span>}</span>

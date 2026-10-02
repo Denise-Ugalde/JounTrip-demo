@@ -17,6 +17,12 @@ export type RealPlace = {
   hours?: { open: { day: number; hour: number; minute: number }; close?: { day: number; hour: number; minute: number } }[] | null;
 };
 
+/** Official Google Maps link that opens exactly this place (works on web and mobile app). */
+function mapsLink(name: string, address: string, id?: string) {
+  const q = encodeURIComponent([name, address].filter(Boolean).join(", "));
+  return `https://www.google.com/maps/search/?api=1&query=${q}${id ? `&query_place_id=${encodeURIComponent(id)}` : ""}`;
+}
+
 /** Searches that define each vibe: what the trip is really about. */
 const VIBE_SEARCHES: Record<"naturaleza" | "cultura" | "gastro" | "playa" | "fiesta", string[]> = {
   naturaleza: ["cascadas", "senderismo y rutas de montaña", "parques naturales y reservas ecológicas", "ecoturismo", "lagos, lagunas y miradores naturales", "jardines botánicos y bosques"],
@@ -93,7 +99,7 @@ export const searchRealPlaces = createServerFn({ method: "POST" })
       address: p.formattedAddress ?? "",
       rating: p.rating ?? null,
       reviews: p.userRatingCount ?? null,
-      mapsUrl: p.googleMapsUri ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.displayName?.text ?? "")}`,
+      mapsUrl: mapsLink(p.displayName?.text ?? "", p.formattedAddress ?? "", p.id),
       lat: p.location?.latitude ?? null,
       lng: p.location?.longitude ?? null,
       photo: null,
@@ -129,7 +135,7 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
     address: p.formattedAddress ?? "",
     rating: p.rating ?? null,
     reviews: p.userRatingCount ?? null,
-    mapsUrl: p.googleMapsUri ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.displayName?.text ?? "")}`,
+    mapsUrl: mapsLink(p.displayName?.text ?? "", p.formattedAddress ?? "", p.id),
     lat: p.location?.latitude ?? null,
     lng: p.location?.longitude ?? null,
     photo: p.photos?.[0]?.name ? `/api/public/photo?n=${encodeURIComponent(p.photos[0].name)}` : null,
