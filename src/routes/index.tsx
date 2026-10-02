@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { TripMap } from "@/components/TripMap";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getTripPlaces, autocompleteCities, type RealPlace } from "@/lib/places.functions";
+import { getTripPlaces, autocompleteCities, findNearbyDestinations, type RealPlace } from "@/lib/places.functions";
 import { Star } from "lucide-react";
 import {
   ArrowLeft, Car, Clock, Wallet, Sparkles, MapPin, Download, Share2, RefreshCw, X,
@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import {
   galleryImages, VIBES, BUDGETS, DURATIONS, ORIGIN_SUGGESTIONS, DEST_SUGGESTIONS,
-  generateTrip, type Prefs, type Trip,
+  generateTrip, tripForReal, type Prefs, type Trip,
 } from "@/lib/trips";
 
 export const Route = createFileRoute("/")({
@@ -35,14 +35,25 @@ function App() {
   const [seen, setSeen] = useState<string[]>([]);
 
   const go = (v: typeof view) => { setView(v); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const run = (exclude: string[]) => {
+  const findNear = useServerFn(findNearbyDestinations);
+  const run = async (exclude: string[]) => {
     go("loading");
+    const started = Date.now();
+    let t: Trip | null = null;
+    if (prefs.knows === "no" && prefs.origin.trim().length >= 2) {
+      try {
+        const { list } = await findNear({ data: { origin: prefs.origin } });
+        const pick = list.find((d) => !exclude.includes(d.name));
+        if (pick) t = tripForReal(prefs, pick);
+      } catch (e) { console.error(e); }
+    }
+    if (!t) t = generateTrip(prefs, exclude);
+    const final = t;
     setTimeout(() => {
-      const t = generateTrip(prefs, exclude);
-      setTrip(t);
-      setSeen([...exclude, t.dest.name]);
+      setTrip(final);
+      setSeen([...exclude, final.dest.name]);
       go("trip");
-    }, 1600);
+    }, Math.max(0, 1600 - (Date.now() - started)));
   };
 
   if (view === "hero") return <Hero onStart={() => go("form")} />;
