@@ -1,6 +1,6 @@
 import type { RealPlace } from "./places.functions";
 
-export type Stop = { start: number; end: number; travel: number; place: RealPlace; meal: "comida" | "cena" | null; night?: boolean };
+export type Stop = { start: number; end: number; travel: number; place: RealPlace; meal: "comida" | "cena" | "desayuno" | "cafe" | null; night?: boolean };
 
 const FOOD_RE = /restaurant|cafe|coffee|bakery|food|meal|ice_cream|diner|steak|pizza|sandwich|deli|brunch|tea_house|confectioner|dessert/;
 const NIGHT_RE = /bar|pub|night_club|wine|brewery|cocktail|lounge|karaoke|live_music/;
@@ -11,15 +11,26 @@ export const isFood = (p: RealPlace) => FOOD_RE.test(p.kind ?? "");
 export const isNight = (p: RealPlace) => NIGHT_RE.test(p.kind ?? "");
 
 /** A real, specific activity: not a restaurant/bar/hotel/shop and with enough Google reviews. */
-const ACTIVITY_RE = /museum|gallery|park|garden|plaza|square|monument|historical|landmark|church|cathedral|place_of_worship|basilica|monastery|mosque|temple|synagogue|castle|palace|fortress|viewpoint|observation|scenic|beach|hiking|national_park|nature|zoo|aquarium|amusement|theater|tourist_attraction|cultural|market|bridge|fountain|lake|winery|archaeological|ruins|sculpture|botanical|wildlife|marina|planetarium|visitor_center|adventure|water_park|ski|cave|waterfall/;
+const ACTIVITY_RE = /museum|gallery|park|garden|plaza|square|monument|historical|landmark|church|cathedral|place_of_worship|basilica|monastery|mosque|temple|synagogue|castle|palace|fortress|viewpoint|observation|scenic|beach|hiking|national_park|nature|zoo|aquarium|amusement|theater|tourist_attraction|cultural|market|bridge|fountain|lake|winery|archaeological|ruins|sculpture|botanical|wildlife|marina|planetarium|visitor_center|adventure|water_park|ski|cave|waterfall|stadium|bowling|casino|go_kart|sports|campground|ecotour|climbing|zipline|surf|diving|event_venue|concert|night_club/;
 
 export function isActivity(p: RealPlace) {
   const k = p.kind ?? "";
-  if (FOOD_RE.test(k) || NIGHT_RE.test(k) || BAD_RE.test(k)) return false;
+  if (FOOD_RE.test(k) || (NIGHT_RE.test(k) && !/night_club/.test(k)) || BAD_RE.test(k)) return false;
   if (/hostal|hotel|casa rural|apartamento|asociaci/i.test(p.name)) return false;
   if (!k) return (p.reviews ?? 0) >= 200;
   return ACTIVITY_RE.test(k) && (p.reviews ?? 0) >= 30;
 }
+
+export type VibeId = "naturaleza" | "cultura" | "gastro" | "playa" | "fiesta";
+/** Place types that fit each vibe (used on top of the vibe searches). */
+const VIBE_KIND: Record<VibeId, RegExp> = {
+  naturaleza: /national_park|hiking|nature|waterfall|lake|viewpoint|botanical|garden|scenic|natural_feature|cave|wildlife|campground|ecotour|park|observation/,
+  cultura: /museum|gallery|historical|monument|church|cathedral|place_of_worship|basilica|monastery|castle|palace|fortress|archaeological|ruins|cultural|theater|landmark|plaza|square|sculpture/,
+  gastro: /market|winery|food|restaurant|cafe|bakery/,
+  playa: /beach|water_park|adventure|amusement|marina|aquarium|hiking|national_park|ski|waterfall|surf|diving|zipline|climbing|ecotour|lake/,
+  fiesta: /amusement|water_park|night_club|stadium|bowling|casino|go_kart|sports|theater|event_venue|concert|live_music|karaoke|zoo|aquarium/,
+};
+export const fitsVibe = (p: RealPlace, v: VibeId) => !!p.vibe || VIBE_KIND[v].test(p.kind ?? "");
 
 /** Realistic visit length (minutes) by place type. */
 export function visitMinutes(p: RealPlace, meal: boolean): number {
@@ -71,27 +82,35 @@ export function isOpen(p: RealPlace, day: number, from: number, to: number) {
   });
 }
 
-export const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+export const fmt = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const up15 = (m: number) => Math.ceil(m / 15) * 15;
 
 type Pools = { spots: RealPlace[]; food: RealPlace[]; night: RealPlace[] };
 
 /**
- * One well-paced day (≈ 5–6 stops), 09:30 → ~22:00:
- *   morning: 2 activities · lunch 13:30–15:00 · afternoon: 2 activities
- *   dinner ~20:00 · optional evening bar/terrace until ~22:00
- * Each stop is the best nearby place that is open for the whole visit,
- * so the day stays geographically clustered and travel time is included.
+ * One well-paced day built around the traveler's vibe. Activities that fit the vibe
+ * always win; generic sights only fill gaps. Each stop is open for the whole visit,
+ * close to the previous one, and travel time is included.
+ *   naturaleza: early start, long outdoor visits, no bars at night
+ *   cultura:    museums/monuments morning and afternoon, optional drink
+ *   gastro:     breakfast, market, lunch, café/dessert, dinner, drink
+ *   playa:      beach/adventure all day, dinner, optional drink
+ *   fiesta:     fun activities from late morning, dinner, 2 nightlife stops until late
  */
-export function planDay(pools: Pools, used: Set<string>, weekday: number, center: { lat: number; lng: number }): Stop[] {
-  const spots = pools.spots.filter(isActivity);
+export function planDay(pools: Pools, used: Set<string>, weekday: number, center: { lat: number; lng: number }, vibe: VibeId = "cultura"): Stop[] {
+  const acts = pools.spots.filter(isActivity);
+  const vAct = acts.filter((p) => fitsVibe(p, vibe));
+  const gAct = vibe === "naturaleza" || vibe === "playa" || vibe === "fiesta" ? acts.filter((p) => !fitsVibe(p, vibe) && OUTDOOR_RE.test(p.kind ?? "")) : acts.filter((p) => !fitsVibe(p, vibe));
   const food = pools.food.filter((p) => isFood(p) || !p.kind);
-  const night = [...pools.night, ...pools.food].filter((p) => isNight(p) && !/restaurant/.test(p.kind ?? "") && !/restaurante|hostal|hotel|pensionista/i.test(p.name));
+  const cafes = food.filter((p) => /cafe|coffee|bakery|dessert|ice_cream|confectioner|tea_house/.test(p.kind ?? ""));
+  const meals = food.filter((p) => !cafes.includes(p));
+  const night = [...pools.night, ...pools.food, ...pools.spots].filter((p) => isNight(p) && !/restaurant/.test(p.kind ?? "") && !/restaurante|hostal|hotel|pensionista/i.test(p.name));
   const stops: Stop[] = [];
-  let t = 9 * 60 + 30;
+  let t = vibe === "naturaleza" || vibe === "playa" ? 9 * 60 : vibe === "fiesta" ? 10 * 60 + 30 : 9 * 60 + 30;
   let prev: { lat: number | null; lng: number | null } | null = null;
 
-  const choose = (pool: RealPlace[], opts: { meal: boolean; earliest?: number; latestStart?: number; latestEnd: number }) => {
+  type Opts = { meal: boolean; earliest?: number; latestStart?: number; latestEnd: number; mins?: number };
+  const pick = (pool: RealPlace[], opts: Opts) => {
     let best: { p: RealPlace; travel: number; start: number; end: number; score: number } | null = null;
     const anchor = prev ?? center;
     for (const p of pool) {
@@ -100,46 +119,64 @@ export function planDay(pools: Pools, used: Set<string>, weekday: number, center
       if (travel > 45) continue;
       const start = up15(Math.max(t + travel, opts.earliest ?? 0));
       if (opts.latestStart != null && start > opts.latestStart) continue;
-      const end = start + visitMinutes(p, opts.meal);
+      const end = start + (opts.mins ?? visitMinutes(p, opts.meal));
       if (end > opts.latestEnd) continue;
       if (!isOpen(p, weekday, start, end)) continue;
       const dist = km(anchor, p);
-      const quality = (p.rating ?? 3.8) * 6 + Math.log10((p.reviews ?? 10) + 1) * 4 + (p.photo ? 3 : 0);
+      const quality = (p.rating ?? 3.8) * 6 + Math.log10((p.reviews ?? 10) + 1) * 4 + (p.photo ? 3 : 0) + (fitsVibe(p, vibe) ? 6 : 0);
       const score = quality - dist * (prev ? 4 : 1) - (start - t) / 15;
       if (!best || score > best.score) best = { p, travel, start, end, score };
     }
     return best;
   };
-  const add = (b: NonNullable<ReturnType<typeof choose>>, meal: Stop["meal"], isN = false) => {
+  // Vibe pool first; generic pool only when nothing fitting is available.
+  const choose = (pools2: RealPlace[][], opts: Opts) => {
+    for (const pl of pools2) { const b = pick(pl, opts); if (b) return b; }
+    return null;
+  };
+  const add = (b: NonNullable<ReturnType<typeof pick>>, meal: Stop["meal"], isN = false) => {
     used.add(b.p.id);
     stops.push({ start: b.start, end: b.end, travel: b.travel, place: b.p, meal, night: isN });
     t = b.end;
     prev = b.p;
   };
+  const actPools = [vAct, gAct];
+  const block = (n: number, latestStart: number, latestEnd: number) => {
+    for (let i = 0; i < n; i++) { const b = choose(actPools, { meal: false, latestStart, latestEnd }); if (b) add(b, null); }
+  };
 
-  // Morning: 2–3 activities, must finish by 14:00.
-  for (let i = 0; i < 3; i++) {
-    const b = choose(spots, { meal: false, latestEnd: 14 * 60, latestStart: 12 * 60 + 45 });
-    if (b) add(b, null);
+  if (vibe === "gastro") {
+    const bf = choose([cafes, meals], { meal: true, mins: 60, earliest: 9 * 60, latestStart: 10 * 60 + 30, latestEnd: 11 * 60 + 30 });
+    if (bf) add(bf, "desayuno");
+    block(vibe === "gastro" ? 2 : 3, 12 * 60 + 30, 14 * 60);
+  } else {
+    block(3, 12 * 60 + 45, 14 * 60 + (vibe === "naturaleza" || vibe === "playa" ? 30 : 0));
   }
-  // Lunch.
-  const lunch = choose(food, { meal: true, earliest: 13 * 60 + 30, latestStart: 15 * 60, latestEnd: 16 * 60 + 30 });
+  const lunch = choose([meals.filter((p) => fitsVibe(p, vibe)), meals], { meal: true, earliest: 13 * 60 + 30, latestStart: 15 * 60, latestEnd: 16 * 60 + 30 });
   if (lunch) add(lunch, "comida");
   else t = Math.max(t, 15 * 60);
-  // Afternoon: 2–3 activities, must finish by 20:00.
-  for (let i = 0; i < 3; i++) {
-    const b = choose(spots, { meal: false, latestEnd: 20 * 60, latestStart: 18 * 60 + 30 });
-    if (b) add(b, null);
+
+  if (vibe === "gastro") {
+    block(1, 17 * 60, 18 * 60 + 30);
+    const cafe = choose([cafes], { meal: true, mins: 60, earliest: 17 * 60, latestStart: 19 * 60, latestEnd: 20 * 60 });
+    if (cafe) add(cafe, "cafe");
+    block(1, 18 * 60 + 30, 20 * 60);
+  } else {
+    block(3, 18 * 60 + 30, 20 * 60);
   }
-  // Dinner.
-  const dinner = choose(food, { meal: true, earliest: 19 * 60 + 30, latestStart: 21 * 60, latestEnd: 22 * 60 + 30 });
+  const dinner = choose([meals.filter((p) => fitsVibe(p, vibe)), meals], { meal: true, earliest: 19 * 60 + 30, latestStart: 21 * 60, latestEnd: 22 * 60 + 30 });
   if (dinner) add(dinner, "cena");
-  // Evening drink only if something nearby is open until the visit ends.
-  if (dinner && t <= 21 * 60 + 30) {
-    const n = choose(night, { meal: false, earliest: 21 * 60, latestStart: 22 * 60, latestEnd: 23 * 60 + 30 });
-    if (n) add(n, null, true);
+
+  if (dinner && vibe !== "naturaleza") {
+    const late = vibe === "fiesta";
+    const n1 = choose([night], { meal: false, earliest: 21 * 60, latestStart: 22 * 60 + 30, latestEnd: late ? 25 * 60 : 23 * 60 + 30, mins: late ? 120 : 90 });
+    if (n1) add(n1, null, true);
+    if (late && n1) {
+      const clubs = night.filter((p) => /night_club/.test(p.kind ?? ""));
+      const n2 = choose([clubs, night], { meal: false, earliest: t, latestStart: 25 * 60, latestEnd: 27 * 60, mins: 150 });
+      if (n2) add(n2, null, true);
+    }
   }
-  // A day without real activities is just meals: drop it rather than pad it.
   if (!stops.some((s) => !s.meal && !s.night)) {
     stops.forEach((s) => used.delete(s.place.id));
     return [];

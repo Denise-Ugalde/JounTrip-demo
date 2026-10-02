@@ -13,15 +13,25 @@ export type RealPlace = {
   photo: string | null;
   type?: string | null;
   kind?: string | null;
+  vibe?: boolean;
   hours?: { open: { day: number; hour: number; minute: number }; close?: { day: number; hour: number; minute: number } }[] | null;
 };
 
-const VIBE_ACTIVITY: Record<string, string> = {
-  naturaleza: "parques naturales, senderos y miradores",
-  cultura: "museos y lugares culturales",
-  gastro: "mercados tradicionales y experiencias gastronómicas",
-  playa: "playas y actividades de aventura",
-  fiesta: "lugares de entretenimiento y espectáculos",
+/** Searches that define each vibe: what the trip is really about. */
+const VIBE_SEARCHES: Record<"naturaleza" | "cultura" | "gastro" | "playa" | "fiesta", string[]> = {
+  naturaleza: ["cascadas", "senderismo y rutas de montaña", "parques naturales y reservas ecológicas", "ecoturismo", "lagos, lagunas y miradores naturales", "jardines botánicos y bosques"],
+  cultura: ["museos", "monumentos y sitios históricos", "iglesias, catedrales y conventos", "zonas arqueológicas y ruinas", "centro histórico y plazas", "galerías de arte y centros culturales"],
+  gastro: ["mercados tradicionales de comida", "cafeterías de especialidad", "restaurantes de cocina típica", "panaderías y dulcerías tradicionales", "viñedos, bodegas y catas"],
+  playa: ["playas", "tirolesa y deportes de aventura", "parques acuáticos", "ecoturismo y kayak", "buceo, snorkel y surf", "cascadas y balnearios"],
+  fiesta: ["parques de diversiones", "parques acuáticos", "discotecas y antros", "bares con música en vivo", "karts, boliche y actividades recreativas", "espectáculos y shows"],
+};
+/** Searches used to pick a destination town that fits the vibe. */
+const VIBE_TOWNS: Record<"naturaleza" | "cultura" | "gastro" | "playa" | "fiesta", string[]> = {
+  naturaleza: ["cascadas", "parques naturales", "senderismo", "ecoturismo", "lagos y lagunas", "reservas naturales"],
+  cultura: ["pueblos mágicos", "casco histórico", "museos", "castillos y monumentos", "zonas arqueológicas", "historic towns"],
+  gastro: ["mercados tradicionales", "restaurantes de cocina típica", "cafeterías de especialidad", "viñedos y bodegas", "pueblos gastronómicos"],
+  playa: ["playas", "tirolesa", "parques acuáticos", "deportes de aventura", "ecoturismo", "balnearios"],
+  fiesta: ["vida nocturna", "discotecas", "parques de diversiones", "parques acuáticos", "bares y antros", "ciudades turísticas"],
 };
 
 const VIBE_QUERY: Record<string, string> = {
@@ -141,15 +151,15 @@ export const getTripPlaces = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const city = data.destination;
-    const [cover, vibeSpots, top, food, more, acts, nightRaw] = await Promise.all([
+    const [cover, top, food, nightRaw, ...vibeLists] = await Promise.all([
       textSearch(city, data.lat, data.lng, 1),
-      textSearch(`${VIBE_ACTIVITY[data.vibe]} en ${city}`, data.lat, data.lng, 20),
       textSearch(`atracciones turísticas en ${city}`, data.lat, data.lng, 20),
       textSearch(`mejores restaurantes en ${city}`, data.lat, data.lng, 20),
-      textSearch(`museos, monumentos y sitios históricos en ${city}`, data.lat, data.lng, 20),
-      textSearch(`parques, miradores y actividades al aire libre en ${city}`, data.lat, data.lng, 20),
-      textSearch(`bares y terrazas en ${city}`, data.lat, data.lng, 15),
+      textSearch(data.vibe === "fiesta" ? `antros, discotecas y bares en ${city}` : `bares y terrazas en ${city}`, data.lat, data.lng, 15),
+      ...VIBE_SEARCHES[data.vibe].map((q) => textSearch(`${q} en ${city}`, data.lat, data.lng, 20)),
     ]);
+    const vibeSpots = vibeLists.flat().map((p) => ({ ...p, vibe: true }));
+    const more: RealPlace[] = [], acts: RealPlace[] = [];
     const FOOD = /restaurant|cafe|coffee|bakery|food|meal|ice_cream|diner|steak|pizza|sandwich|deli|brunch|dessert/;
     const NIGHT = /bar|pub|night_club|wine|brewery|cocktail|lounge/;
     const near = (p: RealPlace) => p.lat == null || p.lng == null || (Math.abs(p.lat - data.lat) < 0.3 && Math.abs(p.lng - data.lng) < 0.4);
@@ -216,7 +226,7 @@ const nearCache = new Map<string, NearbyDest[]>();
 
 /** Real towns/cities 2–3 h by road from the origin (driving time via Routes API). */
 export const findNearbyDestinations = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ origin: z.string().trim().min(2).max(120) }).parse(d))
+  .inputValidator((d) => z.object({ origin: z.string().trim().min(2).max(120), vibe: z.enum(["naturaleza", "cultura", "gastro", "playa", "fiesta"]).default("cultura") }).parse(d))
   .handler(async ({ data }): Promise<{ origin: { lat: number; lng: number } | null; list: NearbyDest[] }> => {
     if (!process.env["LOVABLE_API_KEY"] || !process.env["GOOGLE_MAPS_API_KEY"]) return { origin: null, list: [] };
     try {
@@ -228,7 +238,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
       const loc = ((await g.json()) as any).places?.[0]?.location;
       if (!loc) return { origin: null, list: [] };
       const o = { lat: loc.latitude as number, lng: loc.longitude as number };
-      const ck = data.origin.toLowerCase();
+      const ck = `${data.origin.toLowerCase()}|${data.vibe}`;
       if (nearCache.has(ck)) return { origin: o, list: nearCache.get(ck)! };
 
       const dLat = 2.6, dLng = 2.6 / Math.max(0.3, Math.cos((o.lat * Math.PI) / 180));
@@ -239,14 +249,16 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         },
       };
       // Find popular attractions in the area, then group them by the town they belong to.
-      const queries = ["pueblos turísticos", "ciudades turísticas", "pueblos con encanto", "casco histórico", "castillos y monumentos", "atracciones turísticas", "parques naturales y miradores", "historic towns"];
-      const results = await Promise.all(queries.map(async (q) => {
+      // Vibe searches weigh 3x: the town must stand out for what the traveler wants.
+      const queries = [...VIBE_TOWNS[data.vibe], "pueblos turísticos", "atracciones turísticas"];
+      const nVibe = VIBE_TOWNS[data.vibe].length;
+      const results = await Promise.all(queries.map(async (q, qi) => {
         const r = await fetch(`${GW}/places/v1/places:searchText`, {
           method: "POST", headers: gwHeaders("places.id,places.location,places.addressComponents,places.userRatingCount"),
           body: JSON.stringify({ textQuery: q, pageSize: 20, languageCode: "es", locationRestriction: rect }),
         });
         if (!r.ok) { console.error("near search", r.status, await r.text()); return []; }
-        return (((await r.json()) as any).places ?? []) as any[];
+        return ((((await r.json()) as any).places ?? []) as any[]).map((p) => ({ ...p, w: qi < nVibe ? 3 : 1 }));
       }));
       const km = (a: number, b: number) => {
         const R = 6371, toR = Math.PI / 180;
@@ -254,7 +266,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         const h = Math.sin(x / 2) ** 2 + Math.cos(o.lat * toR) * Math.cos(a * toR) * Math.sin(y / 2) ** 2;
         return 2 * R * Math.asin(Math.sqrt(h));
       };
-      type Town = { name: string; region: string; lat: number; lng: number; score: number; top: number };
+      type Town = { name: string; region: string; lat: number; lng: number; score: number; top: number; vibe: number };
       const towns = new Map<string, Town>();
       const seen = new Set<string>();
       for (const p of results.flat()) {
@@ -268,16 +280,22 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         const prov = comps.find((c) => (c.types ?? []).includes("administrative_area_level_2"))?.longText
           ?? comps.find((c) => (c.types ?? []).includes("administrative_area_level_1"))?.longText;
         const country = comps.find((c) => (c.types ?? []).includes("country"))?.longText;
-        const reviews = p.userRatingCount ?? 0;
+        const raw = p.userRatingCount ?? 0;
+        const reviews = raw * p.w;
+        const v = p.w > 1 ? 1 : 0;
         const t = towns.get(town);
-        if (!t) towns.set(town, { name: town, region: [prov, country].filter((x) => x && x !== town).join(", "), lat: p.location.latitude, lng: p.location.longitude, score: reviews, top: reviews });
+        if (!t) towns.set(town, { name: town, region: [prov, country].filter((x) => x && x !== town).join(", "), lat: p.location.latitude, lng: p.location.longitude, score: reviews, top: reviews, vibe: v });
         else {
-          t.score += reviews;
+          t.score += reviews; t.vibe += v;
           if (reviews > t.top) { t.top = reviews; t.lat = p.location.latitude; t.lng = p.location.longitude; }
         }
       }
       // Real tourist towns: at least a few hundred reviews across their attractions.
-      const cands = [...towns.values()].filter((t) => t.score >= 300).sort((a, b) => b.score - a.score).slice(0, 50);
+      // Prefer towns with several places matching the vibe; relax if there are none.
+      const pool = [...towns.values()].filter((t) => t.score >= 300);
+      const strong = pool.filter((t) => t.vibe >= 2);
+      const cands = (strong.length >= 4 ? strong : pool.filter((t) => t.vibe >= 1).length >= 3 ? pool.filter((t) => t.vibe >= 1) : pool)
+        .sort((a, b) => b.vibe * 1000 + b.score / 100 - (a.vibe * 1000 + a.score / 100)).slice(0, 50);
       if (!cands.length) return { origin: o, list: [] };
 
       const chunks = [cands.slice(0, 25), cands.slice(25, 50)].filter((c) => c.length);
@@ -301,8 +319,10 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         }
       }
       // Strict: only destinations between 2 and 3 hours by road.
-      const list = all.filter((d) => d.minutes >= 120 && d.minutes <= 180);
-      list.sort(() => Math.random() - 0.5);
+      // Keep best vibe matches first (cands order), with light shuffle inside the top group.
+      const order = new Map(cands.map((c, i) => [c.name, i]));
+      const list = all.filter((d) => d.minutes >= 120 && d.minutes <= 180)
+        .sort((a, b) => (order.get(a.name)! + Math.random() * 4) - (order.get(b.name)! + Math.random() * 4));
       console.log("nearby", data.origin, "towns", cands.length, "routes", all.length, "in range", list.length);
       if (list.length) nearCache.set(ck, list);
       return { origin: o, list };
