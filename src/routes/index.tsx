@@ -44,7 +44,7 @@ function App() {
     const wantsNearby = (prefs.knows === "no" || exclude.length > 0) && prefs.origin.trim().length >= 2;
     if (wantsNearby) {
       try {
-        const { list } = await findNear({ data: { origin: prefs.origin } });
+        const { list } = await findNear({ data: { origin: prefs.origin, vibe: prefs.vibe } });
         // Only rotate among destinations 2–3 h away; when all were seen, start over.
         const pick = list.find((d) => !exclude.includes(d.name)) ?? list.find((d) => d.name !== exclude[exclude.length - 1]) ?? list[0];
         if (pick) {
@@ -235,13 +235,13 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
         const pools = { spots: realSpots, food: realFood, night: live?.night ?? [] };
         return trip.days.map((d, i) => {
           const wd = (new Date().getDay() + i) % 7;
-          const stops = planDay(pools, used, wd, { lat: dest.lat, lng: dest.lng });
+          const stops = planDay(pools, used, wd, { lat: dest.lat, lng: dest.lng }, prefs.vibe);
           return {
             day: d.day,
             items: stops.map((s) => ({
               time: fmt(s.start), until: fmt(s.end), travel: s.travel, place: s.place,
               title: s.place.name,
-              type: s.meal === "comida" ? "Comida" : s.meal === "cena" ? "Cena" : s.night ? "Para cerrar la noche" : s.place.type ?? "Actividad",
+              type: s.meal === "comida" ? "Comida" : s.meal === "cena" ? "Cena" : s.meal === "desayuno" ? "Desayuno" : s.meal === "cafe" ? "Café / postre" : s.night ? "Para cerrar la noche" : s.place.type ?? "Actividad",
               summary: s.place.address, cost: -1, img: s.place.photo ?? dest.cover,
             })),
           };
