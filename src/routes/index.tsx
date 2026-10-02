@@ -221,6 +221,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
   const hasLive = realSpots.length + realFood.length > 0;
   // Swap itinerary stops for real Google places (restaurants at meal times).
   let si = 0, fi = 0;
+  const custom = dest.dishes.length === 0;
   const days = trip.days.map((d) => ({
     ...d,
     items: d.items.map((it) => {
@@ -228,8 +229,8 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
       const rp: RealPlace | undefined = meal ? (realFood[fi++] ?? realSpots[si++]) : (realSpots[si++] ?? realFood[fi++]);
       if (!rp) return { ...it, place: undefined as RealPlace | undefined };
       return { ...it, title: rp.name, type: meal ? "Restaurante" : it.type, summary: rp.address, place: rp, img: rp.photo ?? it.img };
-    }),
-  }));
+    }).filter((it) => !(custom && hasLive && !it.place)),
+  })).filter((d) => d.items.length > 0);
   const pins = hasLive
     ? [...realSpots, ...realFood].filter((p) => p.lat != null && p.lng != null).map((p) => ({ name: p.name, type: realFood.includes(p) ? "Restaurante" : "Lugar", lat: p.lat!, lng: p.lng! }))
     : dest.spots;

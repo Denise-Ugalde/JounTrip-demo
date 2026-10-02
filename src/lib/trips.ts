@@ -234,7 +234,7 @@ export function generateTrip(p: Prefs, exclude: string[] = []): Trip {
     if (found) return build(found, p);
     const name = (p.destination.split(",")[0] ?? "").trim();
     const base = D[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % D.length]!;
-    return build({ ...base, name, region: p.destination.split(",")[1]?.trim() ?? "Tu destino", intro: `Un itinerario a tu medida en ${name}. Ajustamos actividades a tu vibe y presupuesto.` }, p);
+    return build({ ...base, dishes: [], name, region: p.destination.split(",")[1]?.trim() ?? "Tu destino", intro: `Un itinerario a tu medida en ${name}. Ajustamos actividades a tu vibe y presupuesto.` }, p);
   }
   const hub = hubOf(p.origin);
   const maxH = p.duration === "1" ? 2.5 : p.duration === "2-3" ? 4 : 6;
@@ -250,7 +250,7 @@ export function tripForReal(p: Prefs, r: { name: string; region: string; lat: nu
   const base = D[Math.abs([...r.name].reduce((a, c) => a + c.charCodeAt(0), 0)) % D.length]!;
   const hours = Math.round((r.minutes / 60) * 10) / 10;
   return build({
-    ...base, name: r.name, region: r.region || "Cerca de ti", lat: r.lat, lng: r.lng, hours,
+    ...base, name: r.name, region: r.region || "Cerca de ti", lat: r.lat, lng: r.lng, hours, dishes: [],
     intro: `A unas ${hours} h por carretera (auto o bus) desde ${p.origin.split(",")[0]}. Un itinerario armado con lugares reales según tu vibe.`,
   }, p);
 }
