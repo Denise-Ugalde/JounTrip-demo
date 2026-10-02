@@ -133,7 +133,7 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
 export const getTripPlaces = createServerFn({ method: "POST" })
   .inputValidator((d) =>
     z.object({
-      destination: z.string().trim().min(2).max(80),
+      destination: z.string().trim().min(2).max(200),
       vibe: z.enum(["naturaleza", "cultura", "gastro", "playa", "fiesta"]),
       lat: z.number().min(-90).max(90),
       lng: z.number().min(-180).max(180),
@@ -242,7 +242,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
       const results = await Promise.all(queries.map(async (q) => {
         const r = await fetch(`${GW}/places/v1/places:searchText`, {
           method: "POST", headers: gwHeaders("places.id,places.displayName,places.formattedAddress,places.location"),
-          body: JSON.stringify({ textQuery: q, includedType: "locality", pageSize: 20, languageCode: "es", locationRestriction: rect }),
+          body: JSON.stringify({ textQuery: q, includedType: "locality", strictTypeFiltering: true, pageSize: 20, languageCode: "es", locationRestriction: rect }),
         });
         if (!r.ok) { console.error("near search", r.status, await r.text()); return []; }
         return (((await r.json()) as any).places ?? []) as any[];
@@ -284,7 +284,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           const parts = String(p.formattedAddress ?? "").split(",").map((s: string) => s.trim());
           all.push({
             name: p.displayName?.text ?? parts[0] ?? "Destino",
-            region: parts.slice(1).join(", ") || "",
+            region: parts.slice(1).map((x: string) => x.replace(/^\d{4,6}\s*/, "")).filter((x: string) => x && !/^\d+$/.test(x)).join(", ") || "",
             lat: p.location.latitude, lng: p.location.longitude,
             minutes: Math.round(parseInt(r.duration, 10) / 60),
           });
@@ -320,7 +320,7 @@ const dishCache = new Map<string, LocalDish[]>();
 
 /** Typical/traditional dishes of a destination, with real photos of each dish. */
 export const getLocalDishes = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ destination: z.string().trim().min(2).max(120), lat: z.number(), lng: z.number() }).parse(d))
+  .inputValidator((d) => z.object({ destination: z.string().trim().min(2).max(200), lat: z.number(), lng: z.number() }).parse(d))
   .handler(async ({ data }): Promise<{ dishes: LocalDish[] }> => {
     const ck = data.destination.toLowerCase();
     if (dishCache.has(ck)) return { dishes: dishCache.get(ck)! };
