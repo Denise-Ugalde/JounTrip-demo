@@ -209,7 +209,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           high: { latitude: Math.min(89, o.lat + dLat), longitude: Math.min(179.9, o.lng + dLng) },
         },
       };
-      const queries = ["pueblos turísticos", "ciudades turísticas", "pueblos con encanto"];
+      const queries = ["pueblos turísticos", "ciudades turísticas", "pueblos con encanto", "tourist towns", "historic towns", "ciudades pequeñas"];
       const results = await Promise.all(queries.map(async (q) => {
         const r = await fetch(`${GW}/places/v1/places:searchText`, {
           method: "POST", headers: gwHeaders("places.id,places.displayName,places.formattedAddress,places.location"),
@@ -225,38 +225,44 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         return 2 * R * Math.asin(Math.sqrt(h));
       };
       const seen = new Set<string>();
+      const seenName = new Set<string>();
       const cands = results.flat().filter((p) => {
-        if (!p.location || seen.has(p.id)) return false;
-        seen.add(p.id);
+        const nm = String(p.displayName?.text ?? "").toLowerCase();
+        if (!p.location || seen.has(p.id) || seenName.has(nm)) return false;
+        seen.add(p.id); seenName.add(nm);
         const d = km(p.location.latitude, p.location.longitude);
-        return d > 60 && d < 330;
-      }).slice(0, 25);
+        return d > 80 && d < 300;
+      }).slice(0, 50);
       if (!cands.length) return { origin: o, list: [] };
 
-      const m = await fetch(`${GW}/routes/distanceMatrix/v2:computeRouteMatrix`, {
-        method: "POST", headers: gwHeaders("destinationIndex,duration,condition"),
-        body: JSON.stringify({
-          origins: [{ waypoint: { location: { latLng: { latitude: o.lat, longitude: o.lng } } } }],
-          destinations: cands.map((p) => ({ waypoint: { location: { latLng: { latitude: p.location.latitude, longitude: p.location.longitude } } } })),
-          travelMode: "DRIVE",
-        }),
-      });
-      if (!m.ok) { console.error("matrix", m.status, await m.text()); return { origin: o, list: [] }; }
-      const rows = (await m.json()) as { destinationIndex?: number; duration?: string; condition?: string }[];
-      const all: NearbyDest[] = rows
-        .filter((r) => r.condition === "ROUTE_EXISTS" && r.duration)
-        .map((r) => {
-          const p = cands[r.destinationIndex ?? 0];
+      const chunks = [cands.slice(0, 25), cands.slice(25, 50)].filter((c) => c.length);
+      const all: NearbyDest[] = [];
+      for (const [ci, chunk] of chunks.entries()) {
+        const m = await fetch(`${GW}/routes/distanceMatrix/v2:computeRouteMatrix`, {
+          method: "POST", headers: gwHeaders("destinationIndex,duration,condition"),
+          body: JSON.stringify({
+            origins: [{ waypoint: { location: { latLng: { latitude: o.lat, longitude: o.lng } } } }],
+            destinations: chunk.map((p) => ({ waypoint: { location: { latLng: { latitude: p.location.latitude, longitude: p.location.longitude } } } })),
+            travelMode: "DRIVE",
+          }),
+        });
+        if (!m.ok) { console.error("matrix", m.status, await m.text()); continue; }
+        const rows = (await m.json()) as { destinationIndex?: number; duration?: string; condition?: string }[];
+        for (const r of rows) {
+          if (r.condition !== "ROUTE_EXISTS" || !r.duration) continue;
+          const p = cands[ci * 25 + (r.destinationIndex ?? 0)];
+          if (!p) continue;
           const parts = String(p.formattedAddress ?? "").split(",").map((s: string) => s.trim());
-          return {
+          all.push({
             name: p.displayName?.text ?? parts[0] ?? "Destino",
             region: parts.slice(1).join(", ") || "",
             lat: p.location.latitude, lng: p.location.longitude,
-            minutes: Math.round(parseInt(r.duration!, 10) / 60),
-          };
-        });
-      let list = all.filter((d) => d.minutes >= 120 && d.minutes <= 180);
-      if (!list.length) list = [...all].sort((a, b) => Math.abs(a.minutes - 150) - Math.abs(b.minutes - 150)).slice(0, 5);
+            minutes: Math.round(parseInt(r.duration, 10) / 60),
+          });
+        }
+      }
+      // Strict: only destinations between 2 and 3 hours by road.
+      const list = all.filter((d) => d.minutes >= 120 && d.minutes <= 180);
       list.sort(() => Math.random() - 0.5);
       nearCache.set(ck, list);
       return { origin: o, list };

@@ -40,11 +40,16 @@ function App() {
     go("loading");
     const started = Date.now();
     let t: Trip | null = null;
-    if (prefs.knows === "no" && prefs.origin.trim().length >= 2) {
+    const wantsNearby = (prefs.knows === "no" || exclude.length > 0) && prefs.origin.trim().length >= 2;
+    if (wantsNearby) {
       try {
         const { list } = await findNear({ data: { origin: prefs.origin } });
-        const pick = list.find((d) => !exclude.includes(d.name));
-        if (pick) t = tripForReal(prefs, pick);
+        // Only rotate among destinations 2–3 h away; when all were seen, start over.
+        const pick = list.find((d) => !exclude.includes(d.name)) ?? list.find((d) => d.name !== exclude[exclude.length - 1]) ?? list[0];
+        if (pick) {
+          t = tripForReal(prefs, pick);
+          if (!list.some((d) => !exclude.includes(d.name))) exclude = [];
+        }
       } catch (e) { console.error(e); }
     }
     if (!t) t = generateTrip(prefs, exclude);
