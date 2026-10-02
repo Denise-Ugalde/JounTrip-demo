@@ -24,7 +24,7 @@ export function visitMinutes(p: RealPlace, meal: boolean): number {
   const k = p.kind ?? "";
   if (/amusement|water_park|zoo|national_park|hiking|ski/.test(k)) return 180;
   if (/beach/.test(k)) return 150;
-  if (/museum|aquarium|castle|archaeological|ruins|palace/.test(k)) return 120;
+  if (/museum|aquarium|castle|fortress|alcazar|archaeological|ruins|palace/.test(k)) return 120;
   if (/park|garden|botanical|lake|market/.test(k)) return 90;
   if (NIGHT_RE.test(k)) return 90;
   if (/art_gallery|cultural|theater|winery/.test(k)) return 90;
@@ -83,7 +83,7 @@ type Pools = { spots: RealPlace[]; food: RealPlace[]; night: RealPlace[] };
 export function planDay(pools: Pools, used: Set<string>, weekday: number, center: { lat: number; lng: number }): Stop[] {
   const spots = pools.spots.filter(isActivity);
   const food = pools.food.filter((p) => isFood(p) || !p.kind);
-  const night = [...pools.night, ...pools.food].filter((p) => isNight(p));
+  const night = [...pools.night, ...pools.food].filter((p) => isNight(p) && !/restaurant/.test(p.kind ?? "") && !/^restaurante/i.test(p.name));
   const stops: Stop[] = [];
   let t = 9 * 60 + 30;
   let prev: { lat: number | null; lng: number | null } | null = null;
@@ -114,17 +114,17 @@ export function planDay(pools: Pools, used: Set<string>, weekday: number, center
     prev = b.p;
   };
 
-  // Morning: up to 2 activities, must finish by 14:30.
-  for (let i = 0; i < 2; i++) {
-    const b = choose(spots, { meal: false, latestEnd: 14 * 60 + 30, latestStart: 13 * 60 });
+  // Morning: 2–3 activities, must finish by 14:00.
+  for (let i = 0; i < 3; i++) {
+    const b = choose(spots, { meal: false, latestEnd: 14 * 60, latestStart: 12 * 60 + 45 });
     if (b) add(b, null);
   }
   // Lunch.
   const lunch = choose(food, { meal: true, earliest: 13 * 60 + 30, latestStart: 15 * 60, latestEnd: 16 * 60 + 30 });
   if (lunch) add(lunch, "comida");
   else t = Math.max(t, 15 * 60);
-  // Afternoon: up to 2 activities, must finish by 20:00.
-  for (let i = 0; i < 2; i++) {
+  // Afternoon: 2–3 activities, must finish by 20:00.
+  for (let i = 0; i < 3; i++) {
     const b = choose(spots, { meal: false, latestEnd: 20 * 60, latestStart: 18 * 60 + 30 });
     if (b) add(b, null);
   }
