@@ -16,6 +16,14 @@ export type RealPlace = {
   hours?: { open: { day: number; hour: number; minute: number }; close?: { day: number; hour: number; minute: number } }[] | null;
 };
 
+const VIBE_ACTIVITY: Record<string, string> = {
+  naturaleza: "parques naturales, senderos y miradores",
+  cultura: "museos y lugares culturales",
+  gastro: "mercados tradicionales y experiencias gastronómicas",
+  playa: "playas y actividades de aventura",
+  fiesta: "lugares de entretenimiento y espectáculos",
+};
+
 const VIBE_QUERY: Record<string, string> = {
   naturaleza: "parques y naturaleza",
   cultura: "museos y lugares culturales",
@@ -133,20 +141,25 @@ export const getTripPlaces = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const city = data.destination;
-    const [cover, vibeSpots, top, food, more, nightRaw] = await Promise.all([
+    const [cover, vibeSpots, top, food, more, acts, nightRaw] = await Promise.all([
       textSearch(city, data.lat, data.lng, 1),
-      textSearch(`${VIBE_QUERY[data.vibe]} en ${city}`, data.lat, data.lng, 20),
+      textSearch(`${VIBE_ACTIVITY[data.vibe]} en ${city}`, data.lat, data.lng, 20),
       textSearch(`atracciones turísticas en ${city}`, data.lat, data.lng, 20),
-      textSearch(`restaurantes de comida típica en ${city}`, data.lat, data.lng, 20),
-      textSearch(`monumentos, plazas y museos en ${city}`, data.lat, data.lng, 20),
-      textSearch(`bares, terrazas y vida nocturna en ${city}`, data.lat, data.lng, 15),
+      textSearch(`mejores restaurantes en ${city}`, data.lat, data.lng, 20),
+      textSearch(`museos, monumentos y sitios históricos en ${city}`, data.lat, data.lng, 20),
+      textSearch(`parques, miradores y actividades al aire libre en ${city}`, data.lat, data.lng, 20),
+      textSearch(`bares y terrazas en ${city}`, data.lat, data.lng, 15),
     ]);
-    const near = (p: RealPlace) => p.lat == null || p.lng == null || (Math.abs(p.lat - data.lat) < 0.35 && Math.abs(p.lng - data.lng) < 0.45);
+    const FOOD = /restaurant|cafe|coffee|bakery|food|meal|ice_cream|diner|steak|pizza|sandwich|deli|brunch|dessert/;
+    const NIGHT = /bar|pub|night_club|wine|brewery|cocktail|lounge/;
+    const near = (p: RealPlace) => p.lat == null || p.lng == null || (Math.abs(p.lat - data.lat) < 0.3 && Math.abs(p.lng - data.lng) < 0.4);
     const byPhoto = (a: RealPlace, b: RealPlace) => Number(!!b.photo) - Number(!!a.photo);
     const seen = new Set<string>();
-    const spots = [...vibeSpots, ...top, ...more].filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
-    const foodU = food.filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
-    const night = nightRaw.filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
+    const all = [...vibeSpots, ...top, ...more, ...acts, ...food, ...nightRaw].filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id));
+    const k = (p: RealPlace) => p.kind ?? "";
+    const spots = all.filter((p) => !FOOD.test(k(p)) && !NIGHT.test(k(p))).sort(byPhoto);
+    const foodU = all.filter((p) => FOOD.test(k(p))).sort(byPhoto);
+    const night = all.filter((p) => NIGHT.test(k(p))).sort(byPhoto);
     return { spots, food: foodU, night, cover: cover[0]?.photo ?? spots.find((p) => p.photo)?.photo ?? null };
   });
 

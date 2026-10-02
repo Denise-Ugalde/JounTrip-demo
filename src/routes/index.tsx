@@ -241,7 +241,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
             items: stops.map((s) => ({
               time: fmt(s.start), until: fmt(s.end), travel: s.travel, place: s.place,
               title: s.place.name,
-              type: s.meal === "comida" ? "Comida" : s.meal === "cena" ? "Cena" : s.place.type ?? "Lugar",
+              type: s.meal === "comida" ? "Comida" : s.meal === "cena" ? "Cena" : s.night ? "Para cerrar la noche" : s.place.type ?? "Actividad",
               summary: s.place.address, cost: -1, img: s.place.photo ?? dest.cover,
             })),
           };
