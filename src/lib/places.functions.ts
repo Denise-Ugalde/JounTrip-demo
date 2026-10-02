@@ -11,6 +11,9 @@ export type RealPlace = {
   lat: number | null;
   lng: number | null;
   photo: string | null;
+  type?: string | null;
+  kind?: string | null;
+  hours?: { open: { day: number; hour: number; minute: number }; close?: { day: number; hour: number; minute: number } }[] | null;
 };
 
 const VIBE_QUERY: Record<string, string> = {
@@ -93,7 +96,7 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
       "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
       "Content-Type": "application/json",
       "X-Goog-FieldMask":
-        "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.googleMapsUri,places.location,places.photos",
+        "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.googleMapsUri,places.location,places.photos,places.primaryType,places.primaryTypeDisplayName,places.regularOpeningHours.periods",
     },
     body: JSON.stringify({
       textQuery, languageCode: "es", pageSize: size,
@@ -112,6 +115,9 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
     lat: p.location?.latitude ?? null,
     lng: p.location?.longitude ?? null,
     photo: p.photos?.[0]?.name ? `/api/public/photo?n=${encodeURIComponent(p.photos[0].name)}` : null,
+    type: p.primaryTypeDisplayName?.text ?? null,
+    kind: p.primaryType ?? null,
+    hours: p.regularOpeningHours?.periods ?? null,
   }));
 }
 
@@ -127,19 +133,21 @@ export const getTripPlaces = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const city = data.destination;
-    const [cover, vibeSpots, top, food, more] = await Promise.all([
+    const [cover, vibeSpots, top, food, more, nightRaw] = await Promise.all([
       textSearch(city, data.lat, data.lng, 1),
       textSearch(`${VIBE_QUERY[data.vibe]} en ${city}`, data.lat, data.lng, 20),
       textSearch(`atracciones turísticas en ${city}`, data.lat, data.lng, 20),
       textSearch(`restaurantes de comida típica en ${city}`, data.lat, data.lng, 20),
       textSearch(`monumentos, plazas y museos en ${city}`, data.lat, data.lng, 20),
+      textSearch(`bares, terrazas y vida nocturna en ${city}`, data.lat, data.lng, 15),
     ]);
     const near = (p: RealPlace) => p.lat == null || p.lng == null || (Math.abs(p.lat - data.lat) < 0.35 && Math.abs(p.lng - data.lng) < 0.45);
     const byPhoto = (a: RealPlace, b: RealPlace) => Number(!!b.photo) - Number(!!a.photo);
     const seen = new Set<string>();
     const spots = [...vibeSpots, ...top, ...more].filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
     const foodU = food.filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
-    return { spots, food: foodU, cover: cover[0]?.photo ?? spots.find((p) => p.photo)?.photo ?? null };
+    const night = nightRaw.filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
+    return { spots, food: foodU, night, cover: cover[0]?.photo ?? spots.find((p) => p.photo)?.photo ?? null };
   });
 
 const acCache = new Map<string, string[]>();
@@ -277,5 +285,61 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
     } catch (e) {
       console.error(e);
       return { origin: null, list: [] };
+    }
+  });
+
+export type LocalDish = { name: string; note: string; img: string | null; place: RealPlace | null };
+
+async function wikiImage(title: string): Promise<string | null> {
+  for (const lang of ["es", "en"]) {
+    try {
+      const r = await fetch(`https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=thumbnail&pithumbsize=900&redirects=1&generator=search&gsrlimit=1&gsrsearch=${encodeURIComponent(title)}`, { headers: { "User-Agent": "JounTrip/1.0" } });
+      if (!r.ok) continue;
+      const pages = ((await r.json()) as any).query?.pages ?? {};
+      const src = (Object.values(pages)[0] as any)?.thumbnail?.source;
+      if (src) return src;
+    } catch { /* ignore */ }
+  }
+  return null;
+}
+
+const dishCache = new Map<string, LocalDish[]>();
+
+/** Typical/traditional dishes of a destination, with real photos of each dish. */
+export const getLocalDishes = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ destination: z.string().trim().min(2).max(120), lat: z.number(), lng: z.number() }).parse(d))
+  .handler(async ({ data }): Promise<{ dishes: LocalDish[] }> => {
+    const ck = data.destination.toLowerCase();
+    if (dishCache.has(ck)) return { dishes: dishCache.get(ck)! };
+    const key = process.env["LOVABLE_API_KEY"];
+    if (!key) return { dishes: [] };
+    try {
+      const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: "Eres experto en gastronomía regional. Responde solo JSON." },
+            { role: "user", content: `Lista 4 platillos o bebidas típicas, locales o tradicionales de ${data.destination} (o de su región inmediata). Devuelve {"dishes":[{"name":"nombre del platillo","note":"descripción breve en español, máx 90 caracteres","wiki":"título del artículo de Wikipedia del platillo"}]}` },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      });
+      if (!r.ok) { console.error("dishes ai", r.status, await r.text()); return { dishes: [] }; }
+      const txt = ((await r.json()) as any).choices?.[0]?.message?.content ?? "{}";
+      const list = ((JSON.parse(txt.replace(/^```json|```$/g, "")).dishes ?? []) as { name: string; note: string; wiki?: string }[]).slice(0, 4);
+      const dishes = await Promise.all(list.map(async (d) => {
+        const [img, places] = await Promise.all([
+          wikiImage(d.wiki || d.name),
+          textSearch(`${d.name} en ${data.destination}`, data.lat, data.lng, 1),
+        ]);
+        return { name: d.name, note: d.note, img: img ?? places[0]?.photo ?? null, place: places[0] ?? null };
+      }));
+      dishCache.set(ck, dishes);
+      return { dishes };
+    } catch (e) {
+      console.error(e);
+      return { dishes: [] };
     }
   });

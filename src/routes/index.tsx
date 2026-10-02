@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { TripMap } from "@/components/TripMap";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getTripPlaces, autocompleteCities, findNearbyDestinations, type RealPlace } from "@/lib/places.functions";
+import { getTripPlaces, getLocalDishes, autocompleteCities, findNearbyDestinations, type RealPlace } from "@/lib/places.functions";
+import { planDay, fmt } from "@/lib/schedule";
 import { Star } from "lucide-react";
 import {
   ArrowLeft, Car, Clock, Wallet, Sparkles, MapPin, Download, Share2, RefreshCw, X,
@@ -219,18 +220,34 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
   const realSpots = live?.spots ?? [];
   const realFood = live?.food ?? [];
   const hasLive = realSpots.length + realFood.length > 0;
-  // Swap itinerary stops for real Google places (restaurants at meal times).
-  let si = 0, fi = 0;
-  const custom = dest.dishes.length === 0;
-  const days = trip.days.map((d) => ({
-    ...d,
-    items: d.items.map((it) => {
-      const meal = it.time === "12:30" || it.time === "19:00";
-      const rp: RealPlace | undefined = meal ? (realFood[fi++] ?? realSpots[si++]) : (realSpots[si++] ?? realFood[fi++]);
-      if (!rp) return { ...it, place: undefined as RealPlace | undefined };
-      return { ...it, title: rp.name, type: meal ? "Restaurante" : it.type, summary: rp.address, place: rp, img: rp.photo ?? it.img };
-    }).filter((it) => !(custom && hasLive && !it.place)),
-  })).filter((d) => d.items.length > 0);
+  const fetchDishes = useServerFn(getLocalDishes);
+  const { data: dishData, isLoading: dishLoading } = useQuery({
+    queryKey: ["dishes", dest.name, dest.region],
+    queryFn: () => fetchDishes({ data: { destination: `${dest.name}, ${dest.region}`, lat: dest.lat, lng: dest.lng } }),
+    staleTime: Infinity, retry: false,
+  });
+  const localDishes = dishData?.dishes ?? [];
+  // Real itinerary 09:00–22:00 with visit lengths, travel time and opening hours.
+  type Item = { time: string; title: string; type: string; summary: string; cost: number; img: string; place?: RealPlace; travel?: number; until?: string };
+  const days: { day: number; items: Item[] }[] = hasLive
+    ? (() => {
+        const used = new Set<string>();
+        const pools = { spots: realSpots, food: realFood, night: live?.night ?? [] };
+        return trip.days.map((d, i) => {
+          const wd = (new Date().getDay() + i) % 7;
+          const stops = planDay(pools, used, wd, { lat: dest.lat, lng: dest.lng });
+          return {
+            day: d.day,
+            items: stops.map((s) => ({
+              time: fmt(s.start), until: fmt(s.end), travel: s.travel, place: s.place,
+              title: s.place.name,
+              type: s.meal === "comida" ? "Comida" : s.meal === "cena" ? "Cena" : s.place.type ?? "Lugar",
+              summary: s.place.address, cost: -1, img: s.place.photo ?? dest.cover,
+            })),
+          };
+        }).filter((d) => d.items.length > 0);
+      })()
+    : trip.days;
   const pins = hasLive
     ? [...realSpots, ...realFood].filter((p) => p.lat != null && p.lng != null).map((p) => ({ name: p.name, type: realFood.includes(p) ? "Restaurante" : "Lugar", lat: p.lat!, lng: p.lng! }))
     : dest.spots;
@@ -303,30 +320,34 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
         </section>
 
         <section>
-          <h2 className="mb-4 font-display text-3xl font-extrabold">Imperdible probar 😋</h2>
+          <h2 className="mb-1 font-display text-3xl font-extrabold">Imperdible probar 😋</h2>
+          <h3 className="mb-3 mt-4 font-display text-xl font-bold">Comida típica de {dest.name}</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {localDishes.length > 0 ? localDishes.map((d) => (
+              <article key={d.name} className="overflow-hidden rounded-3xl bg-card shadow-card">
+                {d.img ? <img src={d.img} alt={d.name} loading="lazy" className="h-40 w-full object-cover" />
+                  : <div className="flex h-40 w-full items-center justify-center bg-muted"><Utensils className="h-8 w-8 text-muted-foreground" /></div>}
+                <div className="p-4">
+                  <h4 className="font-display text-lg font-bold">{d.name}</h4>
+                  <p className="mt-1 text-sm text-muted-foreground">{d.note}</p>
+                  {d.place && <a href={d.place.mapsUrl} target="_blank" rel="noreferrer" className="mt-2 block text-sm font-semibold text-primary hover:underline">Pruébalo en {d.place.name} →</a>}
+                </div>
+              </article>
+            )) : <p className="text-sm text-muted-foreground">{dishLoading ? "Buscando platillos típicos…" : "No encontramos platillos típicos para este destino."}</p>}
+          </div>
+          <h3 className="mb-3 mt-8 font-display text-xl font-bold">Restaurantes imperdibles</h3>
           <div className="grid gap-4 sm:grid-cols-3">
-            {realFood.length > 0 ? realFood.slice(0, 6).map((f) => (
+            {realFood.length > 0 ? [...realFood].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).slice(0, 6).map((f) => (
               <a key={f.id} href={f.mapsUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-3xl bg-card shadow-card hover:bg-muted">
                 {f.photo ? <img src={f.photo} alt={f.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
                   : <div className="flex h-40 w-full items-center justify-center bg-muted"><Utensils className="h-8 w-8 text-muted-foreground" /></div>}
                 <div className="p-4">
-                  <h3 className="font-display text-lg font-bold">{f.name}</h3>
+                  <h4 className="font-display text-lg font-bold">{f.name}</h4>
                   {f.rating != null && <p className="text-sm font-medium text-primary">★ {f.rating.toFixed(1)}{f.reviews != null ? ` · ${f.reviews.toLocaleString("es")} reseñas` : ""}</p>}
                   <p className="mt-1 text-sm text-muted-foreground">{f.address}</p>
                 </div>
               </a>
-            )) : liveLoading ? <p className="text-sm text-muted-foreground">Buscando restaurantes reales…</p>
-            : dest.dishes.length === 0 ? <p className="text-sm text-muted-foreground">No encontramos restaurantes en Google para este destino.</p>
-            : dest.dishes.map((d) => (
-              <article key={d.name} className="overflow-hidden rounded-3xl bg-card shadow-card">
-                <img src={d.img} alt={d.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
-                <div className="p-4">
-                  <h3 className="font-display text-lg font-bold">{d.name}</h3>
-                  <p className="text-sm font-medium text-primary">{d.place}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{d.note}</p>
-                </div>
-              </article>
-            ))}
+            )) : <p className="text-sm text-muted-foreground">{liveLoading ? "Buscando restaurantes reales…" : "No encontramos restaurantes en Google para este destino."}</p>}
           </div>
         </section>
 
@@ -344,10 +365,10 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
                   <img src={it.img} alt="" loading="lazy" width={1024} height={768} className="h-20 w-20 shrink-0 rounded-2xl object-cover sm:h-24 sm:w-28" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-primary">{it.time}</span>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${it.cost === 0 ? "bg-secondary text-secondary-foreground" : "bg-accent text-accent-foreground"}`}>
+                      <span className="text-sm font-bold text-primary">{it.time}{it.until ? ` – ${it.until}` : ""}</span>
+                      {it.cost >= 0 ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${it.cost === 0 ? "bg-secondary text-secondary-foreground" : "bg-accent text-accent-foreground"}`}>
                         {it.cost === 0 ? "¡Gratis!" : `~$${it.cost}`}
-                      </span>
+                      </span> : <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-bold">{it.type}</span>}
                     </div>
                     {it.place ? (
                       <a href={it.place.mapsUrl} target="_blank" rel="noreferrer" className="font-display font-bold hover:text-primary">{it.title}</a>
@@ -356,6 +377,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
                       <span className="ml-0 flex items-center gap-1 text-sm font-medium text-primary"><Star className="h-3.5 w-3.5 fill-current" />{it.place.rating.toFixed(1)}{it.place.reviews != null && <span className="text-muted-foreground">({it.place.reviews.toLocaleString("es")})</span>}</span>
                     )}
                     <p className="text-sm text-muted-foreground">{it.summary}</p>
+                    {!!it.travel && <p className="mt-1 text-xs font-medium text-muted-foreground">{it.travel <= 15 ? "🚶" : "🚗"} {it.travel} min de traslado desde la parada anterior</p>}
                   </div>
                 </li>
               ))}
