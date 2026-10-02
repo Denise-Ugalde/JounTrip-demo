@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { TripMap } from "@/components/TripMap";
 import {
   ArrowLeft, Car, Clock, Wallet, Sparkles, MapPin, Download, Share2, RefreshCw, X,
   MessageCircle, Send, Mail, Link2, Check, Utensils,
@@ -180,10 +181,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
   const [share, setShare] = useState(false);
   useEffect(() => setDay(0), [dest.name]);
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${dest.name}, ${dest.region}`)}`;
-  const key = import.meta.env["VITE_LOVABLE_CONNECTOR_GOOGLE_MAPS_BROWSER_KEY"] as string | undefined;
-  const mapSrc = key
-    ? `https://www.google.com/maps/embed/v1/view?key=${key}&center=${dest.lat},${dest.lng}&zoom=12`
-    : `https://www.openstreetmap.org/export/embed.html?bbox=${dest.lng - 0.08},${dest.lat - 0.06},${dest.lng + 0.08},${dest.lat + 0.06}&layer=mapnik&marker=${dest.lat},${dest.lng}`;
+  const osmSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${dest.lng - 0.08},${dest.lat - 0.06},${dest.lng + 0.08},${dest.lat + 0.06}&layer=mapnik&marker=${dest.lat},${dest.lng}`;
   const vibe = VIBES.find((v) => v.id === prefs.vibe)!.label;
   const budget = BUDGETS.find((b) => b.id === prefs.budget)!.label;
 
@@ -226,7 +224,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
         <section>
           <h2 className="mb-4 font-display text-3xl font-extrabold">Tu mapa</h2>
           <div className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
-            <iframe title="Mapa" src={mapSrc} className="h-80 w-full rounded-3xl border-0 shadow-card" loading="lazy" />
+            <TripMap center={{ lat: dest.lat, lng: dest.lng }} pins={dest.spots} fallback={osmSrc} />
             <ul className="space-y-2">
               {[...dest.spots.map((s) => ({ n: s.name, t: s.type, food: false })), ...dest.dishes.map((d) => ({ n: d.place, t: d.name, food: true }))].map((p, i) => (
                 <li key={i}>
