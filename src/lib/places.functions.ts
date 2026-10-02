@@ -10,6 +10,7 @@ export type RealPlace = {
   mapsUrl: string;
   lat: number | null;
   lng: number | null;
+  photo: string | null;
 };
 
 const VIBE_QUERY: Record<string, string> = {
@@ -74,6 +75,7 @@ export const searchRealPlaces = createServerFn({ method: "POST" })
       mapsUrl: p.googleMapsUri ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.displayName?.text ?? "")}`,
       lat: p.location?.latitude ?? null,
       lng: p.location?.longitude ?? null,
+      photo: null,
     }));
     if (cache.size > 500) cache.clear();
     cache.set(key, { at: Date.now(), data: places });
@@ -91,7 +93,7 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
       "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
       "Content-Type": "application/json",
       "X-Goog-FieldMask":
-        "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.googleMapsUri,places.location",
+        "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.googleMapsUri,places.location,places.photos",
     },
     body: JSON.stringify({
       textQuery, languageCode: "es", pageSize: size,
@@ -109,6 +111,7 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
     mapsUrl: p.googleMapsUri ?? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.displayName?.text ?? "")}`,
     lat: p.location?.latitude ?? null,
     lng: p.location?.longitude ?? null,
+    photo: p.photos?.[0]?.name ? `/api/public/photo?n=${encodeURIComponent(p.photos[0].name)}` : null,
   }));
 }
 
@@ -123,7 +126,8 @@ export const getTripPlaces = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data }) => {
-    const [vibeSpots, top, food] = await Promise.all([
+    const [cover, vibeSpots, top, food] = await Promise.all([
+      textSearch(data.destination, data.lat, data.lng, 1),
       textSearch(`${VIBE_QUERY[data.vibe]} en ${data.destination}`, data.lat, data.lng, 10),
       textSearch(`atracciones turísticas en ${data.destination}`, data.lat, data.lng, 10),
       textSearch(`restaurantes de comida típica en ${data.destination}`, data.lat, data.lng, 10),
@@ -131,7 +135,7 @@ export const getTripPlaces = createServerFn({ method: "POST" })
     const seen = new Set<string>();
     const spots = [...vibeSpots, ...top].filter((p) => !seen.has(p.id) && seen.add(p.id));
     const foodU = food.filter((p) => !seen.has(p.id));
-    return { spots, food: foodU };
+    return { spots, food: foodU, cover: cover[0]?.photo ?? spots.find((p) => p.photo)?.photo ?? null };
   });
 
 const acCache = new Map<string, string[]>();
