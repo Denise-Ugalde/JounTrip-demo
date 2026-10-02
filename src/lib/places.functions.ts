@@ -261,13 +261,13 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         if (!p.location || seen.has(p.id)) continue;
         seen.add(p.id);
         const comps = (p.addressComponents ?? []) as { longText: string; types: string[] }[];
-        const town = comps.find((c) => c.types.includes("locality"))?.longText;
+        const town = comps.find((c) => (c.types ?? []).includes("locality"))?.longText;
         if (!town) continue;
         const d = km(p.location.latitude, p.location.longitude);
         if (d < 80 || d > 300) continue;
-        const prov = comps.find((c) => c.types.includes("administrative_area_level_2"))?.longText
-          ?? comps.find((c) => c.types.includes("administrative_area_level_1"))?.longText;
-        const country = comps.find((c) => c.types.includes("country"))?.longText;
+        const prov = comps.find((c) => (c.types ?? []).includes("administrative_area_level_2"))?.longText
+          ?? comps.find((c) => (c.types ?? []).includes("administrative_area_level_1"))?.longText;
+        const country = comps.find((c) => (c.types ?? []).includes("country"))?.longText;
         const reviews = p.userRatingCount ?? 0;
         const t = towns.get(town);
         if (!t) towns.set(town, { name: town, region: [prov, country].filter((x) => x && x !== town).join(", "), lat: p.location.latitude, lng: p.location.longitude, score: reviews, top: reviews });
