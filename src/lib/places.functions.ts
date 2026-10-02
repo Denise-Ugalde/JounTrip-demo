@@ -238,11 +238,12 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           high: { latitude: Math.min(89, o.lat + dLat), longitude: Math.min(179.9, o.lng + dLng) },
         },
       };
-      const queries = ["pueblos turísticos", "ciudades turísticas", "pueblos con encanto", "tourist towns", "historic towns", "ciudades pequeñas"];
+      // Find popular attractions in the area, then group them by the town they belong to.
+      const queries = ["pueblos turísticos", "ciudades turísticas", "pueblos con encanto", "casco histórico", "castillos y monumentos", "atracciones turísticas", "parques naturales y miradores", "historic towns"];
       const results = await Promise.all(queries.map(async (q) => {
         const r = await fetch(`${GW}/places/v1/places:searchText`, {
-          method: "POST", headers: gwHeaders("places.id,places.displayName,places.formattedAddress,places.location"),
-          body: JSON.stringify({ textQuery: q, includedType: "locality", strictTypeFiltering: true, pageSize: 20, languageCode: "es", locationRestriction: rect }),
+          method: "POST", headers: gwHeaders("places.id,places.location,places.addressComponents,places.userRatingCount"),
+          body: JSON.stringify({ textQuery: q, pageSize: 20, languageCode: "es", locationRestriction: rect }),
         });
         if (!r.ok) { console.error("near search", r.status, await r.text()); return []; }
         return (((await r.json()) as any).places ?? []) as any[];
@@ -253,15 +254,30 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
         const h = Math.sin(x / 2) ** 2 + Math.cos(o.lat * toR) * Math.cos(a * toR) * Math.sin(y / 2) ** 2;
         return 2 * R * Math.asin(Math.sqrt(h));
       };
+      type Town = { name: string; region: string; lat: number; lng: number; score: number; top: number };
+      const towns = new Map<string, Town>();
       const seen = new Set<string>();
-      const seenName = new Set<string>();
-      const cands = results.flat().filter((p) => {
-        const nm = String(p.displayName?.text ?? "").toLowerCase();
-        if (!p.location || seen.has(p.id) || seenName.has(nm)) return false;
-        seen.add(p.id); seenName.add(nm);
+      for (const p of results.flat()) {
+        if (!p.location || seen.has(p.id)) continue;
+        seen.add(p.id);
+        const comps = (p.addressComponents ?? []) as { longText: string; types: string[] }[];
+        const town = comps.find((c) => c.types.includes("locality"))?.longText;
+        if (!town) continue;
         const d = km(p.location.latitude, p.location.longitude);
-        return d > 80 && d < 300;
-      }).slice(0, 50);
+        if (d < 80 || d > 300) continue;
+        const prov = comps.find((c) => c.types.includes("administrative_area_level_2"))?.longText
+          ?? comps.find((c) => c.types.includes("administrative_area_level_1"))?.longText;
+        const country = comps.find((c) => c.types.includes("country"))?.longText;
+        const reviews = p.userRatingCount ?? 0;
+        const t = towns.get(town);
+        if (!t) towns.set(town, { name: town, region: [prov, country].filter((x) => x && x !== town).join(", "), lat: p.location.latitude, lng: p.location.longitude, score: reviews, top: reviews });
+        else {
+          t.score += reviews;
+          if (reviews > t.top) { t.top = reviews; t.lat = p.location.latitude; t.lng = p.location.longitude; }
+        }
+      }
+      // Real tourist towns: at least a few hundred reviews across their attractions.
+      const cands = [...towns.values()].filter((t) => t.score >= 300).sort((a, b) => b.score - a.score).slice(0, 50);
       if (!cands.length) return { origin: o, list: [] };
 
       const chunks = [cands.slice(0, 25), cands.slice(25, 50)].filter((c) => c.length);
@@ -271,7 +287,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           method: "POST", headers: gwHeaders("destinationIndex,duration,condition"),
           body: JSON.stringify({
             origins: [{ waypoint: { location: { latLng: { latitude: o.lat, longitude: o.lng } } } }],
-            destinations: chunk.map((p) => ({ waypoint: { location: { latLng: { latitude: p.location.latitude, longitude: p.location.longitude } } } })),
+            destinations: chunk.map((p) => ({ waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lng } } } })),
             travelMode: "DRIVE",
           }),
         });
@@ -281,13 +297,7 @@ export const findNearbyDestinations = createServerFn({ method: "POST" })
           if (r.condition !== "ROUTE_EXISTS" || !r.duration) continue;
           const p = cands[ci * 25 + (r.destinationIndex ?? 0)];
           if (!p) continue;
-          const parts = String(p.formattedAddress ?? "").split(",").map((s: string) => s.trim());
-          all.push({
-            name: p.displayName?.text ?? parts[0] ?? "Destino",
-            region: parts.slice(1).map((x: string) => x.replace(/^\d{4,6}\s*/, "")).filter((x: string) => x && !/^\d+$/.test(x)).join(", ") || "",
-            lat: p.location.latitude, lng: p.location.longitude,
-            minutes: Math.round(parseInt(r.duration, 10) / 60),
-          });
+          all.push({ name: p.name, region: p.region, lat: p.lat, lng: p.lng, minutes: Math.round(parseInt(r.duration, 10) / 60) });
         }
       }
       // Strict: only destinations between 2 and 3 hours by road.
