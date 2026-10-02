@@ -227,7 +227,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
       const meal = it.time === "12:30" || it.time === "19:00";
       const rp: RealPlace | undefined = meal ? (realFood[fi++] ?? realSpots[si++]) : (realSpots[si++] ?? realFood[fi++]);
       if (!rp) return { ...it, place: undefined as RealPlace | undefined };
-      return { ...it, title: rp.name, type: meal ? "Restaurante" : it.type, summary: rp.address, place: rp };
+      return { ...it, title: rp.name, type: meal ? "Restaurante" : it.type, summary: rp.address, place: rp, img: rp.photo ?? it.img };
     }),
   }));
   const pins = hasLive
@@ -258,7 +258,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
 
       <div className="mx-auto max-w-5xl space-y-10 px-4 pt-6">
         <section className="relative overflow-hidden rounded-[2rem] shadow-card">
-          <img src={dest.cover} alt={dest.name} width={1024} height={768} className="h-[52vh] min-h-[360px] w-full object-cover" />
+          <img src={live?.cover ?? dest.cover} alt={dest.name} width={1024} height={768} className="h-[52vh] min-h-[360px] w-full object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-overlay/90 via-overlay/30 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 p-6 sm:p-10 text-primary-foreground">
             <p className="text-sm uppercase tracking-widest opacity-80">{dest.region} · desde {prefs.origin || "tu ciudad"}</p>
@@ -306,7 +306,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
           <div className="grid gap-4 sm:grid-cols-3">
             {dest.dishes.map((d, di) => (
               <article key={d.name} className="overflow-hidden rounded-3xl bg-card shadow-card">
-                <img src={d.img} alt={d.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
+                <img src={realFood[di]?.photo ?? d.img} alt={realFood[di]?.name ?? d.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
                 <div className="p-4">
                   <h3 className="font-display text-lg font-bold">{d.name}</h3>
                   {realFood[di] ? (
