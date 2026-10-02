@@ -311,7 +311,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
               {listItems.map((p, i) => (
                 <li key={i}>
                   <a href={p.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.n}, ${dest.name}`)}`} target="_blank" rel="noopener noreferrer"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); const u = e.currentTarget.href; const w = window.open(u, "_blank", "noopener,noreferrer"); if (!w) window.top ? (window.top.location.href = u) : (window.location.href = u); }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); const u = e.currentTarget.href; const w = window.open(u, "_blank", "noopener,noreferrer"); if (!w) { try { window.top!.location.href = u; } catch { window.location.href = u; } } }}
                     className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card hover:bg-muted">
                     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${p.food ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground"}`}>
                       {p.food ? <Utensils className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
