@@ -354,6 +354,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
         <section>
           <h2 className="mb-4 font-display text-3xl font-extrabold">Día a día</h2>
           {days.length === 0 && <p className="text-sm text-muted-foreground">{liveLoading ? "Armando tu día a día con lugares reales de Google…" : "No encontramos suficientes lugares abiertos en Google para armar el día a día."}</p>}
+          {hasLive && days.length > 0 && days.length < trip.days.length && <p className="mb-4 text-sm text-muted-foreground">{dest.name} es un destino pequeño: sus lugares abiertos alcanzan para {days.length} {days.length === 1 ? "día" : "días"} bien aprovechados sin repetir.</p>}
           <div className="no-print mb-5 flex gap-2 overflow-x-auto">
             {days.map((d, i) => <button key={i} onClick={() => setDay(i)} className={chip(day === i)}>Día {d.day}</button>)}
           </div>
