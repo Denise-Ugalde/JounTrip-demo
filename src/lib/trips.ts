@@ -232,7 +232,7 @@ export function generateTrip(p: Prefs, exclude: string[] = []): Trip {
     const q = p.destination.toLowerCase();
     const found = D.find((d) => q.includes(d.name.toLowerCase()));
     if (found) return build(found, p);
-    const name = p.destination.split(",")[0].trim();
+    const name = (p.destination.split(",")[0] ?? "").trim();
     const base = D[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % D.length]!;
     return build({ ...base, name, region: p.destination.split(",")[1]?.trim() ?? "Tu destino", intro: `Un itinerario a tu medida en ${name}. Ajustamos actividades a tu vibe y presupuesto.` }, p);
   }
