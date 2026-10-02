@@ -97,7 +97,7 @@ async function textSearch(textQuery: string, lat: number, lng: number, size: num
     },
     body: JSON.stringify({
       textQuery, languageCode: "es", pageSize: size,
-      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: 25000 } },
+      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: 20000 } },
     }),
   });
   if (!res.ok) { console.error(`Places failed [${res.status}]: ${await res.text()}`); return []; }
@@ -126,15 +126,19 @@ export const getTripPlaces = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data }) => {
-    const [cover, vibeSpots, top, food] = await Promise.all([
-      textSearch(data.destination, data.lat, data.lng, 1),
-      textSearch(`${VIBE_QUERY[data.vibe]} en ${data.destination}`, data.lat, data.lng, 10),
-      textSearch(`atracciones turísticas en ${data.destination}`, data.lat, data.lng, 10),
-      textSearch(`restaurantes de comida típica en ${data.destination}`, data.lat, data.lng, 10),
+    const city = data.destination;
+    const [cover, vibeSpots, top, food, more] = await Promise.all([
+      textSearch(city, data.lat, data.lng, 1),
+      textSearch(`${VIBE_QUERY[data.vibe]} en ${city}`, data.lat, data.lng, 20),
+      textSearch(`atracciones turísticas en ${city}`, data.lat, data.lng, 20),
+      textSearch(`restaurantes de comida típica en ${city}`, data.lat, data.lng, 20),
+      textSearch(`monumentos, plazas y museos en ${city}`, data.lat, data.lng, 20),
     ]);
+    const near = (p: RealPlace) => p.lat == null || p.lng == null || (Math.abs(p.lat - data.lat) < 0.35 && Math.abs(p.lng - data.lng) < 0.45);
+    const byPhoto = (a: RealPlace, b: RealPlace) => Number(!!b.photo) - Number(!!a.photo);
     const seen = new Set<string>();
-    const spots = [...vibeSpots, ...top].filter((p) => !seen.has(p.id) && seen.add(p.id));
-    const foodU = food.filter((p) => !seen.has(p.id));
+    const spots = [...vibeSpots, ...top, ...more].filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
+    const foodU = food.filter((p) => near(p) && !seen.has(p.id) && seen.add(p.id)).sort(byPhoto);
     return { spots, food: foodU, cover: cover[0]?.photo ?? spots.find((p) => p.photo)?.photo ?? null };
   });
 

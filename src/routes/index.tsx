@@ -221,6 +221,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
   const hasLive = realSpots.length + realFood.length > 0;
   // Swap itinerary stops for real Google places (restaurants at meal times).
   let si = 0, fi = 0;
+  const custom = dest.dishes.length === 0;
   const days = trip.days.map((d) => ({
     ...d,
     items: d.items.map((it) => {
@@ -228,8 +229,8 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
       const rp: RealPlace | undefined = meal ? (realFood[fi++] ?? realSpots[si++]) : (realSpots[si++] ?? realFood[fi++]);
       if (!rp) return { ...it, place: undefined as RealPlace | undefined };
       return { ...it, title: rp.name, type: meal ? "Restaurante" : it.type, summary: rp.address, place: rp, img: rp.photo ?? it.img };
-    }),
-  }));
+    }).filter((it) => !(custom && hasLive && !it.place)),
+  })).filter((d) => d.items.length > 0);
   const pins = hasLive
     ? [...realSpots, ...realFood].filter((p) => p.lat != null && p.lng != null).map((p) => ({ name: p.name, type: realFood.includes(p) ? "Restaurante" : "Lugar", lat: p.lat!, lng: p.lng! }))
     : dest.spots;
@@ -304,14 +305,24 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
         <section>
           <h2 className="mb-4 font-display text-3xl font-extrabold">Imperdible probar 😋</h2>
           <div className="grid gap-4 sm:grid-cols-3">
-            {dest.dishes.map((d, di) => (
+            {realFood.length > 0 ? realFood.slice(0, 6).map((f) => (
+              <a key={f.id} href={f.mapsUrl} target="_blank" rel="noreferrer" className="overflow-hidden rounded-3xl bg-card shadow-card hover:bg-muted">
+                {f.photo ? <img src={f.photo} alt={f.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
+                  : <div className="flex h-40 w-full items-center justify-center bg-muted"><Utensils className="h-8 w-8 text-muted-foreground" /></div>}
+                <div className="p-4">
+                  <h3 className="font-display text-lg font-bold">{f.name}</h3>
+                  {f.rating != null && <p className="text-sm font-medium text-primary">★ {f.rating.toFixed(1)}{f.reviews != null ? ` · ${f.reviews.toLocaleString("es")} reseñas` : ""}</p>}
+                  <p className="mt-1 text-sm text-muted-foreground">{f.address}</p>
+                </div>
+              </a>
+            )) : liveLoading ? <p className="text-sm text-muted-foreground">Buscando restaurantes reales…</p>
+            : dest.dishes.length === 0 ? <p className="text-sm text-muted-foreground">No encontramos restaurantes en Google para este destino.</p>
+            : dest.dishes.map((d) => (
               <article key={d.name} className="overflow-hidden rounded-3xl bg-card shadow-card">
-                <img src={realFood[di]?.photo ?? d.img} alt={realFood[di]?.name ?? d.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
+                <img src={d.img} alt={d.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
                 <div className="p-4">
                   <h3 className="font-display text-lg font-bold">{d.name}</h3>
-                  {realFood[di] ? (
-                    <a href={realFood[di]!.mapsUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary hover:underline">Pruébalo en {realFood[di]!.name}{realFood[di]!.rating != null ? ` · ★ ${realFood[di]!.rating!.toFixed(1)}` : ""}</a>
-                  ) : <p className="text-sm font-medium text-primary">{d.place}</p>}
+                  <p className="text-sm font-medium text-primary">{d.place}</p>
                   <p className="mt-1 text-sm text-muted-foreground">{d.note}</p>
                 </div>
               </article>
