@@ -11,11 +11,14 @@ export const isFood = (p: RealPlace) => FOOD_RE.test(p.kind ?? "");
 export const isNight = (p: RealPlace) => NIGHT_RE.test(p.kind ?? "");
 
 /** A real, specific activity: not a restaurant/bar/hotel/shop and with enough Google reviews. */
+const ACTIVITY_RE = /museum|gallery|park|garden|plaza|square|monument|historical|landmark|church|cathedral|place_of_worship|basilica|monastery|mosque|temple|synagogue|castle|palace|fortress|viewpoint|observation|scenic|beach|hiking|national_park|nature|zoo|aquarium|amusement|theater|tourist_attraction|cultural|market|bridge|fountain|lake|winery|archaeological|ruins|sculpture|botanical|wildlife|marina|planetarium|visitor_center|adventure|water_park|ski|cave|waterfall/;
+
 export function isActivity(p: RealPlace) {
   const k = p.kind ?? "";
-  if (FOOD_RE.test(k) || NIGHT_RE.test(k)) return false;
-  if (BAD_RE.test(k) && !/market/.test(k)) return false;
-  return (p.reviews ?? 0) >= 30;
+  if (FOOD_RE.test(k) || NIGHT_RE.test(k) || BAD_RE.test(k)) return false;
+  if (/hostal|hotel|casa rural|apartamento|asociaci/i.test(p.name)) return false;
+  if (!k) return (p.reviews ?? 0) >= 200;
+  return ACTIVITY_RE.test(k) && (p.reviews ?? 0) >= 30;
 }
 
 /** Realistic visit length (minutes) by place type. */
@@ -83,7 +86,7 @@ type Pools = { spots: RealPlace[]; food: RealPlace[]; night: RealPlace[] };
 export function planDay(pools: Pools, used: Set<string>, weekday: number, center: { lat: number; lng: number }): Stop[] {
   const spots = pools.spots.filter(isActivity);
   const food = pools.food.filter((p) => isFood(p) || !p.kind);
-  const night = [...pools.night, ...pools.food].filter((p) => isNight(p) && !/restaurant/.test(p.kind ?? "") && !/^restaurante/i.test(p.name));
+  const night = [...pools.night, ...pools.food].filter((p) => isNight(p) && !/restaurant/.test(p.kind ?? "") && !/restaurante|hostal|hotel|pensionista/i.test(p.name));
   const stops: Stop[] = [];
   let t = 9 * 60 + 30;
   let prev: { lat: number | null; lng: number | null } | null = null;
@@ -132,9 +135,14 @@ export function planDay(pools: Pools, used: Set<string>, weekday: number, center
   const dinner = choose(food, { meal: true, earliest: 19 * 60 + 30, latestStart: 21 * 60, latestEnd: 22 * 60 + 30 });
   if (dinner) add(dinner, "cena");
   // Evening drink only if something nearby is open until the visit ends.
-  if (t <= 21 * 60 + 30) {
-    const n = choose(night, { meal: false, latestStart: 22 * 60, latestEnd: 23 * 60 + 30 });
+  if (dinner && t <= 21 * 60 + 30) {
+    const n = choose(night, { meal: false, earliest: 21 * 60, latestStart: 22 * 60, latestEnd: 23 * 60 + 30 });
     if (n) add(n, null, true);
+  }
+  // A day without real activities is just meals: drop it rather than pad it.
+  if (!stops.some((s) => !s.meal && !s.night)) {
+    stops.forEach((s) => used.delete(s.place.id));
+    return [];
   }
   return stops;
 }
