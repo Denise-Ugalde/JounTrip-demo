@@ -275,12 +275,14 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
         <section>
           <h2 className="mb-4 font-display text-3xl font-extrabold">Imperdible probar 😋</h2>
           <div className="grid gap-4 sm:grid-cols-3">
-            {dest.dishes.map((d) => (
+            {dest.dishes.map((d, di) => (
               <article key={d.name} className="overflow-hidden rounded-3xl bg-card shadow-card">
                 <img src={d.img} alt={d.name} loading="lazy" width={1024} height={768} className="h-40 w-full object-cover" />
                 <div className="p-4">
                   <h3 className="font-display text-lg font-bold">{d.name}</h3>
-                  <p className="text-sm font-medium text-primary">{d.place}</p>
+                  {realFood[di] ? (
+                    <a href={realFood[di]!.mapsUrl} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary hover:underline">Pruébalo en {realFood[di]!.name}{realFood[di]!.rating != null ? ` · ★ ${realFood[di]!.rating!.toFixed(1)}` : ""}</a>
+                  ) : <p className="text-sm font-medium text-primary">{d.place}</p>}
                   <p className="mt-1 text-sm text-muted-foreground">{d.note}</p>
                 </div>
               </article>
