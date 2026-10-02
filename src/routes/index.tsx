@@ -209,6 +209,10 @@ function Loading() {
   );
 }
 
+/** Google Maps link that opens exactly this place (by its Google place id). */
+const placeUrl = (p: RealPlace) =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name}, ${p.address}`)}&query_place_id=${encodeURIComponent(p.id)}`;
+
 function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; onBack: () => void; onRetry: () => void }) {
   const { dest } = trip;
   const fetchPlaces = useServerFn(getTripPlaces);
@@ -252,7 +256,7 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
     ? [...realSpots, ...realFood].filter((p) => p.lat != null && p.lng != null).map((p) => ({ name: p.name, type: realFood.includes(p) ? "Restaurante" : "Lugar", lat: p.lat!, lng: p.lng! }))
     : dest.spots;
   const listItems = hasLive
-    ? [...realSpots.map((p) => ({ n: p.name, t: p.address, food: false, url: p.mapsUrl, r: p.rating })), ...realFood.map((p) => ({ n: p.name, t: p.address, food: true, url: p.mapsUrl, r: p.rating }))]
+    ? [...realSpots.map((p) => ({ n: p.name, t: p.address, food: false, url: placeUrl(p), r: p.rating })), ...realFood.map((p) => ({ n: p.name, t: p.address, food: true, url: placeUrl(p), r: p.rating }))]
     : [...dest.spots.map((s) => ({ n: s.name, t: s.type, food: false, url: "", r: null as number | null })), ...dest.dishes.map((d) => ({ n: d.place, t: d.name, food: true, url: "", r: null as number | null }))];
   const [day, setDay] = useState(0);
   const [share, setShare] = useState(false);
@@ -306,7 +310,8 @@ function TripView({ trip, prefs, onBack, onRetry }: { trip: Trip; prefs: Prefs; 
             <ul className="max-h-[480px] space-y-2 overflow-y-auto">
               {listItems.map((p, i) => (
                 <li key={i}>
-                  <a href={p.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.n}, ${dest.name}`)}`} target="_blank" rel="noreferrer"
+                  <a href={p.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.n}, ${dest.name}`)}`} target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); const u = e.currentTarget.href; const w = window.open(u, "_blank", "noopener,noreferrer"); if (!w) { try { window.top!.location.href = u; } catch { window.location.href = u; } } }}
                     className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card hover:bg-muted">
                     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${p.food ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground"}`}>
                       {p.food ? <Utensils className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
