@@ -18,7 +18,7 @@ export type RealPlace = {
 };
 
 /** Searches that define each vibe: what the trip is really about. */
-const VIBE_SEARCHES: Record<string, string[]> = {
+const VIBE_SEARCHES: Record<"naturaleza" | "cultura" | "gastro" | "playa" | "fiesta", string[]> = {
   naturaleza: ["cascadas", "senderismo y rutas de montaña", "parques naturales y reservas ecológicas", "ecoturismo", "lagos, lagunas y miradores naturales", "jardines botánicos y bosques"],
   cultura: ["museos", "monumentos y sitios históricos", "iglesias, catedrales y conventos", "zonas arqueológicas y ruinas", "centro histórico y plazas", "galerías de arte y centros culturales"],
   gastro: ["mercados tradicionales de comida", "cafeterías de especialidad", "restaurantes de cocina típica", "panaderías y dulcerías tradicionales", "viñedos, bodegas y catas"],
@@ -26,7 +26,7 @@ const VIBE_SEARCHES: Record<string, string[]> = {
   fiesta: ["parques de diversiones", "parques acuáticos", "discotecas y antros", "bares con música en vivo", "karts, boliche y actividades recreativas", "espectáculos y shows"],
 };
 /** Searches used to pick a destination town that fits the vibe. */
-const VIBE_TOWNS: Record<string, string[]> = {
+const VIBE_TOWNS: Record<"naturaleza" | "cultura" | "gastro" | "playa" | "fiesta", string[]> = {
   naturaleza: ["cascadas", "parques naturales", "senderismo", "ecoturismo", "lagos y lagunas", "reservas naturales"],
   cultura: ["pueblos mágicos", "casco histórico", "museos", "castillos y monumentos", "zonas arqueológicas", "historic towns"],
   gastro: ["mercados tradicionales", "restaurantes de cocina típica", "cafeterías de especialidad", "viñedos y bodegas", "pueblos gastronómicos"],
