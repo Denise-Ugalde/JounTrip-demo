@@ -212,11 +212,11 @@ export type Trip = {
 
 function build(dest: Destination, p: Prefs): Trip {
   const nDays = DURATIONS.find((d) => d.id === p.duration)!.days;
-  const pool = [...dest.spots, ...dest.dishes.map((d) => ({ name: `Comer: ${d.name}`, type: "Comida", cost: 220, lat: dest.lat, lng: dest.lng, img: d.img }))];
+  const pool: Spot[] = [...dest.spots, ...dest.dishes.map((d) => ({ name: `Comer: ${d.name}`, type: "Comida", cost: 220, lat: dest.lat, lng: dest.lng, img: d.img }))];
   const days = Array.from({ length: nDays }, (_, di) => ({
     day: di + 1,
     items: slots.slice(0, nDays === 1 ? 4 : 3).map((time, si) => {
-      const s = pool[(di * 3 + si) % pool.length];
+      const s = pool[(di * 3 + si) % pool.length]!;
       return {
         time, title: s.name, type: s.type, img: s.img,
         summary: `${s.type} en ${dest.name}, ideal para un plan ${VIBES.find((v) => v.id === p.vibe)!.label.split(" ")[0].toLowerCase()}.`,
@@ -233,7 +233,7 @@ export function generateTrip(p: Prefs, exclude: string[] = []): Trip {
     const found = D.find((d) => q.includes(d.name.toLowerCase()));
     if (found) return build(found, p);
     const name = p.destination.split(",")[0].trim();
-    const base = D[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % D.length];
+    const base = D[Math.abs([...name].reduce((a, c) => a + c.charCodeAt(0), 0)) % D.length]!;
     return build({ ...base, name, region: p.destination.split(",")[1]?.trim() ?? "Tu destino", intro: `Un itinerario a tu medida en ${name}. Ajustamos actividades a tu vibe y presupuesto.` }, p);
   }
   const hub = hubOf(p.origin);
@@ -241,6 +241,6 @@ export function generateTrip(p: Prefs, exclude: string[] = []): Trip {
   const score = (d: Destination) => (d.hubs.includes(hub) ? 10 : 0) + (d.vibes.includes(p.vibe) ? 5 : 0) + (d.hours <= maxH ? 3 : 0);
   const ranked = D.filter((d) => !exclude.includes(d.name)).sort((a, b) => score(b) - score(a));
   const sameHub = ranked.filter((d) => d.hubs.includes(hub));
-  const pick = (sameHub.length ? sameHub : ranked.length ? ranked : D)[0];
+  const pick = (sameHub.length ? sameHub : ranked.length ? ranked : D)[0]!;
   return build(pick, p);
 }
