@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { TripMap } from "@/components/TripMap";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getTripPlaces, type RealPlace } from "@/lib/places.functions";
+import { getTripPlaces, autocompleteCities, type RealPlace } from "@/lib/places.functions";
 import { Star } from "lucide-react";
 import {
   ArrowLeft, Car, Clock, Wallet, Sparkles, MapPin, Download, Share2, RefreshCw, X,
@@ -87,7 +87,20 @@ function Hero({ onStart }: { onStart: () => void }) {
 
 function Suggest({ value, onChange, options, placeholder }: { value: string; onChange: (v: string) => void; options: string[]; placeholder: string }) {
   const [open, setOpen] = useState(false);
-  const matches = value.length > 0 ? options.filter((o) => o.toLowerCase().includes(value.toLowerCase()) && o !== value).slice(0, 4) : [];
+  const [q, setQ] = useState("");
+  const ac = useServerFn(autocompleteCities);
+  useEffect(() => {
+    const t = setTimeout(() => setQ(value.trim()), 300);
+    return () => clearTimeout(t);
+  }, [value]);
+  const live = useQuery({
+    queryKey: ["ac", q.toLowerCase()],
+    queryFn: () => ac({ data: { input: q } }),
+    enabled: open && q.length >= 2,
+    staleTime: Infinity,
+  });
+  const local = value.length > 0 ? options.filter((o) => o.toLowerCase().includes(value.toLowerCase()) && o !== value) : [];
+  const matches = Array.from(new Set([...(live.data?.suggestions ?? []), ...local])).filter((o) => o !== value).slice(0, 5);
   return (
     <div>
       <div className="relative">

@@ -133,3 +133,41 @@ export const getTripPlaces = createServerFn({ method: "POST" })
     const foodU = food.filter((p) => !seen.has(p.id));
     return { spots, food: foodU };
   });
+
+const acCache = new Map<string, string[]>();
+
+export const autocompleteCities = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ input: z.string().trim().min(2).max(80) }).parse(d))
+  .handler(async ({ data }): Promise<{ suggestions: string[] }> => {
+    const k = data.input.toLowerCase();
+    const hit = acCache.get(k);
+    if (hit) return { suggestions: hit };
+    const LOVABLE_API_KEY = process.env["LOVABLE_API_KEY"];
+    const GOOGLE_MAPS_API_KEY = process.env["GOOGLE_MAPS_API_KEY"];
+    if (!LOVABLE_API_KEY || !GOOGLE_MAPS_API_KEY) return { suggestions: [] };
+    try {
+      const res = await fetch("https://connector-gateway.lovable.dev/google_maps/places/v1/places:autocomplete", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "X-Connection-Api-Key": GOOGLE_MAPS_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input: data.input, languageCode: "es", includedPrimaryTypes: ["(cities)"] }),
+      });
+      if (!res.ok) {
+        console.error("autocomplete failed", res.status, await res.text());
+        return { suggestions: [] };
+      }
+      const json = (await res.json()) as { suggestions?: { placePrediction?: { text?: { text?: string } } }[] };
+      const list = (json.suggestions ?? [])
+        .map((s) => s.placePrediction?.text?.text)
+        .filter((t): t is string => !!t)
+        .slice(0, 5);
+      acCache.set(k, list);
+      return { suggestions: list };
+    } catch (e) {
+      console.error(e);
+      return { suggestions: [] };
+    }
+  });
